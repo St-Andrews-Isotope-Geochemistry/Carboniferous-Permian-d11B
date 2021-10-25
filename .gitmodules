@@ -1,0 +1,9 @@
+[submodule "Code/Dependencies/BuCC"]
+	path = Code/Dependencies/BuCC
+	url = https://github.com/St-Andrews-Isotope-Geochemistry/BuCC
+[submodule "Code/Dependencies/Geochemistry_Helpers"]
+	path = Code/Dependencies/Geochemistry_Helpers
+	url = https://github.com/St-Andrews-Isotope-Geochemistry/Geochemistry_Helpers
+[submodule "Code/Dependencies/MyAMI"]
+	path = Code/Dependencies/MyAMI
+	url = https://github.com/St-Andrews-Isotope-Geochemistry/MyAMI
