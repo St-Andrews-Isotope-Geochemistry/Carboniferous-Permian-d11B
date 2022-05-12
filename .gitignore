@@ -1,3 +1,5 @@
 /Data
 *.environment
 workspace*
+.vscode/
+**/__pycache__/**
