@@ -1,4 +1,5 @@
 /Data
+/Figures
 *.environment
 workspace*
 .vscode/
