@@ -3,14 +3,17 @@ import numpy
 ## Define any preprocessing functions
 def importData(name=None):
     import pandas
-    data = pandas.read_excel("./Data/Data_Compilation_SrCOB.xlsx",usecols="D:E,I:L,O:Q,S:U,W")
-    data = data.rename(columns={"Age_Simulated":"Age"})
+    if name.lower()=="boron":
+        data = pandas.read_excel("./Data/Our_Samples.xlsx",usecols="A:B",sheet_name="Matlab")
+    elif name.lower()=="strontium":
+        data = pandas.read_excel("./Data/Data_Compilation_SrCOB.xlsx",usecols="D:E,K:L",sheet_name="Matlab")
+        data = data.rename(columns={"Age_Simulated":"Age"})
     return data
 def refineData(data,name):
     if name.lower()=="boron":
-        data = data.dropna(subset=["d11B","d11B_Reproducibility","d11B_Uncertainty","d11B_Borate","Age"]).sort_values("Age").reset_index()
+        data = data.dropna(subset=["Age","d11B4"]).sort_values("Age").reset_index()
     elif name.lower()=="strontium":
-        data = data.dropna(subset=["Sr87","Sr87_SD","Age"]).sort_values("Age").reset_index()
+        data = data.dropna(subset=["Age","Sr87","Sr87_SD"]).sort_values("Age").reset_index()
     return data
 def sortByAge(data):
     return data.sort_values("Age")
