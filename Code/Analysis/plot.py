@@ -54,18 +54,24 @@ axes_1[3].set_ylabel("pH")
 axes_1[3].set_ylim((7.0,8.5))
 
 minmax = (max(preprocessing.equally_spaced_ages),min(preprocessing.equally_spaced_ages))
-for dic_sample in dic:
-    axes_1[4].plot(minmax,[dic_sample,dic_sample])
+dic_gp.plotArea(axis=axes_1[4],group=1,color="red",alpha=0.3)
+#for dic_sample in dic:
+#    axes_1[4].plot(minmax,[dic_sample,dic_sample])
 
 axes_1[4].set_ylabel("DIC")
+axes_1[4].set_ylim((0,10000))
 
 #co2_log_gp.plotArea(axis=axes_1[4],group=1,color="blue",alpha=0.3)
-co2_prior[0].bin_edges = numpy.log2(co2_prior[0].bin_edges)
-co2_gp.log2Samples().plotArea(axis=axes_1[5],group=1,color="blue",alpha=0.3)
+#co2_prior[0].bin_edges = numpy.log2(co2_prior[0].bin_edges)
+co2_gp.plotArea(axis=axes_1[5],group=1,color="blue",alpha=0.3)
+co2_gp.plotMean(axis=axes_1[5],group=1,color="blue",zorder=2)
+#axes_1[5].plot(preprocessing.interpolation_ages[1],numpy.squeeze(co2_gp.samples[1][0]),color="red")
+#axes_1[5].plot(preprocessing.interpolation_ages[1],numpy.squeeze(co2_gp.samples[1][1]),color="blue")
+
 #co2_gp_2.log2Samples().plotArea(axis=axes_1[4],group=1,color="red",alpha=0.3)
 
-axes_1[5].set_yticks(numpy.log2(250*(2**numpy.array([0,1,2,3,4,5,6]))))
-axes_1[5].set_yticklabels(250*(2**numpy.array([0,1,2,3,4,5,6])))
+#axes_1[5].set_yticks(numpy.log2(250*(2**numpy.array([0,1,2,3,4,5,6]))))
+#axes_1[5].set_yticklabels(250*(2**numpy.array([0,1,2,3,4,5,6])))
 
 # co2_patch_1 = Polygon([[466,numpy.log2(10)],[466,numpy.log2(20000)],[462,numpy.log2(20000)],[462,numpy.log2(10)]],color="white",zorder=3,alpha=0.7)
 # co2_patch_2 = Polygon([[442,numpy.log2(10)],[442,numpy.log2(20000)],[433,numpy.log2(20000)],[433,numpy.log2(10)]],color="white",zorder=3,alpha=0.7)
@@ -74,7 +80,8 @@ axes_1[5].set_yticklabels(250*(2**numpy.array([0,1,2,3,4,5,6])))
 # axes_1[4].add_patch(co2_patch_2)
 
 axes_1[5].set_ylabel("CO$_2$")
-axes_1[5].set_ylim(numpy.log2([100,20000]))
+axes_1[5].set_ylim((0,10000))
+#axes_1[5].set_ylim(numpy.log2([100,20000]))
 
 axes_1[-1].set_xlabel("Age (Ma)")
 axes_1[-1].set_xlim((max(preprocessing.equally_spaced_ages),min(preprocessing.equally_spaced_ages)))
@@ -201,5 +208,5 @@ axes_1[-1].set_xlim((max(preprocessing.equally_spaced_ages),min(preprocessing.eq
 # axes_3.set_ylabel("$\delta^{11}B_{sw}$")
 
 # a = 5
-pyplot.savefig("CarboniferousPermian_d11B4_Sr_d11Bsw_pH_DIC_CO2.png",dpi=600)
-pyplot.show()
+#pyplot.savefig("CarboniferousPermian_d11B4_Sr_d11Bsw_pH_DIC_CO2.png",dpi=600)
+#pyplot.show()
