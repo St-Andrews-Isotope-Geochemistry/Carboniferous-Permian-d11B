@@ -5,24 +5,34 @@ from geochemistry_helpers import Sampling,GaussianProcess
 def importData(name=None):
     import pandas
     if name.lower()=="boron":
-        data = pandas.read_excel("./Data/Data_Compilation_SrCOB.xlsx",usecols="K,W,P",sheet_name="Matlab")
-        data = data.rename(columns={"Age_Simulated":"Age"})
+        data = pandas.read_excel("./Data/Data_Compilation_SrCOB.xlsx",usecols="A,L,M,Q,U,V",names=["horizon","age","age_uncertainty","d18O","d11B4_uncertainty","d11B4"],sheet_name="Matlab")
     elif name.lower()=="strontium":
-        data = pandas.read_excel("./Data/Data_Compilation_SrCOB.xlsx",usecols="D:E,K:L",sheet_name="Matlab")
-        data = data.rename(columns={"Age_Simulated":"Age"})
+        data = pandas.read_excel("./Data/Data_Compilation_SrCOB.xlsx",usecols="C:D,L:M",names=["strontium","strontium_uncertainty","age","age_uncertainty"],sheet_name="Matlab")
+    elif name.lower()=="calcium_magnesium":
+        data = pandas.read_excel("./Data/Boundary_Conditions.xlsx",header=1,usecols="A,D,G",names=["age","calcium","magnesium"],sheet_name="Seawater_Relevant")
+    elif name.lower()=="lithium":
+        data = pandas.read_excel("./Data/Lithium.xlsx",usecols="A:B",names=["age","lithium"],sheet_name="Matlab",header=1)
+    return data
+def recombineData(data,name):
+    if name.lower()=="boron":
+        data = data.groupby(["age","horizon"]).mean().reset_index()
+    elif name.lower()=="strontium":
+        pass
     return data
 def refineData(data,name):
     if name.lower()=="boron":
-        data = data.dropna(subset=["Age","d11B4"]).sort_values("Age").reset_index()
-        data["d18O"] = data["d18O"].fillna(data["d18O"].mean())
+        data = data.dropna(subset=["age","d11B4","d18O"])
     elif name.lower()=="strontium":
-        data = data.dropna(subset=["Age","Sr87","Sr87_SD"]).sort_values("Age").reset_index()
+        data = data.dropna(subset=["age","strontium","strontium_uncertainty"])
+    elif name.lower()=="lithium":
+        data = data.dropna(subset=["age","lithium"])
     return data
 def sortByAge(data):
-    return data.sort_values("Age")
+    return data.sort_values("age",ascending=False).reset_index()
 
 def getData(name=None):
     data = importData(name)
+    data = recombineData(data,name)
     data = refineData(data,name)
     data = sortByAge(data)
     return data
@@ -33,34 +43,41 @@ def getd11BswRange(d11B4,plot=False):
     return d11Bsw_range
 
 ## Define any variables
-equally_spaced_ages = numpy.arange(250,330,0.1)
+equally_spaced_ages = numpy.arange(340,269.9,-0.1)
 strontium_x = numpy.arange(0.7,0.71,1e-5)
+lithium_x = numpy.arange(-10,50,0.1)
 temperature_x = numpy.arange(-50,50,0.1)
 pH_x = numpy.arange(1,14,0.01)
-carbon_x = numpy.arange(1,1e6,10)
+carbon_x = numpy.arange(-1e5,1e6,10)
 carbon_logx = numpy.arange(-50,50,0.01)
-d11B_x = numpy.arange(0,100,0.1)
-number_of_samples = 500
+d11B_x = numpy.arange(-50,100,0.1)
+number_of_samples = 100
 
-dic_edges = [2000,10000]
+dic_edges = [200,20000]
 
 
 # Load the data
 data = getData("boron")
-d11B4_uncertainty = 0.3
 epsilon = 27.2
 
-interpolation_ages = [getData("boron")["Age"].to_numpy(),equally_spaced_ages]
+interpolation_ages = [getData("boron")["age"].to_numpy(),equally_spaced_ages]
 
-d11Bsw_range = getd11BswRange(data["d11B4"].to_numpy())
 
 ## Define priors
 # Can reuse the same one if the prior is the same across the time series
-d11B4_priors = [Sampling.Sampler(d11B_x,"Gaussian",(d11B4,d11B4_uncertainty),"Monte_Carlo",location=age).normalise() for age,d11B4 in zip(data["Age"].to_numpy(),data["d11B4"].to_numpy(),strict=True)]
+d11B4_priors = [Sampling.Sampler(d11B_x,"Gaussian",(d11B4,d11B4_uncertainty),"Monte_Carlo",location=age).normalise() for age,d11B4,d11B4_uncertainty in zip(data["age"].to_numpy(),data["d11B4"].to_numpy(),data["d11B4_uncertainty"].to_numpy(),strict=True)]
 pH_prior = [Sampling.Distribution(pH_x,"Gaussian",(8,1)).normalise()]
-co2_prior = [Sampling.Distribution(carbon_x,"Flat",(100,20000)).normalise()]
-d11Bsw_priors = [Sampling.Sampler(d11B_x,"Flat",(range[0],range[1]),"Monte_Carlo",location=age).normalise() for age,range in zip(data["Age"].to_numpy(),d11Bsw_range,strict=True)]
-d11Bsw_initial_prior = d11Bsw_priors[0]
+co2_prior = [Sampling.Distribution(carbon_x,"Flat",(50,5000)).normalise()]
+dic_prior = [Sampling.Sampler(carbon_x,"Flat",(dic_edges[0],dic_edges[1]),"Monte_Carlo").normalise()]
 
+strontium_scaling_prior = Sampling.Sampler(numpy.arange(-2,2,0.01),"Flat",(-1,1),"Monte_Carlo").normalise()
+lithium_scaling_prior = Sampling.Sampler(numpy.arange(-2,2,0.01),"Flat",(-1,1),"Monte_Carlo").normalise()
 d11Bsw_scaling_prior = Sampling.Sampler(numpy.arange(-50,50,0.01),"Flat",(-40,40),"Monte_Carlo").normalise()
 
+d11B4_jitter_samplers = [Sampling.Sampler(numpy.arange(-1,1,0.001),"Gaussian",(0,uncertainty/10),"Monte_Carlo").normalise() for uncertainty in data["d11B4_uncertainty"].to_numpy()]
+
+initial_dic_sampler = [Sampling.Sampler(carbon_x,"Flat",(dic_edges[0],dic_edges[1]),"Monte_Carlo").normalise()]
+initial_dic_jitter_sampler = [Sampling.Sampler(numpy.arange(-1e4,1e4,10),"Gaussian",(0,500),"Monte_Carlo").normalise()]
+
+dic_fraction_sampler = [Sampling.Sampler(numpy.arange(-5,5,0.01),"Flat",(-1,2),"Monte_Carlo").normalise()]
+dic_fraction_jitter_sampler = [Sampling.Sampler(numpy.arange(-5,5,1e-3),"Gaussian",(0,1),"Monte_Carlo").normalise()]
