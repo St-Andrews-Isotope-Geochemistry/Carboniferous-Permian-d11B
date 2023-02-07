@@ -9,7 +9,7 @@ from cbsyst import boron_isotopes,Csys
 from cbsyst.helpers import Bunch
 import kgen
 
-markov_chain = Sampling.MarkovChain().fromJSON("./markov_chain.json")
+markov_chain = Sampling.MarkovChain().fromJSON("./Data/Output/markov_chain.json")
 
 # d11B4_gp = GaussianProcess().setQueryLocations([preprocessing.interpolation_ages[0]],preprocessing.d11B_x)
 d11B4_25_gp = GaussianProcess().setQueryLocations(preprocessing.interpolation_ages,preprocessing.d11B_x)
@@ -50,7 +50,7 @@ axes_1[0].scatter(preprocessing.interpolation_ages[0],preprocessing.data["d11B4"
 d11B4_25_gp.plotMean(axis=axes_1[0],group=1,color="grey",zorder=2)
 d11B4_25_gp.plotArea(axis=axes_1[0],group=1,color="blue",alpha=0.5,zorder=1,set_axes=False)
 
-axes_1[0].set_ylim((5,15))
+axes_1[0].set_ylim((5,20))
 axes_1[0].set_ylabel("$\delta^{11}B_{4}$")
 
 from matplotlib.patches import Polygon,Rectangle
@@ -94,7 +94,7 @@ dic_gp.plotMedian(axis=axes_1[5],group=1,color="red",zorder=2)
 axes_1[5].set_ylabel("DIC")
 axes_1[5].set_ylim((0,20000))
 
-co2_data = pandas.read_excel("./Data/CO2.xlsx",usecols="A:B",names=["age","co2"],header=0,sheet_name="Matlab")
+co2_data = pandas.read_excel("./Data/Input/CO2.xlsx",usecols="A:B",names=["age","co2"],header=0,sheet_name="Matlab")
 axes_1[6].scatter(co2_data["age"],co2_data["co2"],color="black",marker=".",zorder=3)
 
 co2_gp.plotArea(axis=axes_1[6],group=1,color="blue",alpha=0.3)

@@ -7,8 +7,8 @@ from cbsyst import boron_isotopes,Csys
 from cbsyst.helpers import Bunch
 import kgen
 
-from processStrontium import generateNormalisedStrontium
-from processLithium import generateNormalisedLithium
+from processStrontium import makeStrontiumGP,generateNormalisedStrontium
+from processLithium import makeLithiumGP,generateNormalisedLithium
 import preprocessing,processCalciumMagnesium
 
 def calculatepH(plot=False):
@@ -18,6 +18,9 @@ def calculatepH(plot=False):
         if any(d11Bsw_probability==0) or d11Bsw_scaling_probability==0 or d11Bsw_initial_probability==0:
             return False
         return True
+    
+    strontium_gp = makeStrontiumGP()
+    lithium_gp = makeLithiumGP()
 
     normalised_strontium_gp = generateNormalisedStrontium()
     normalised_lithium_gp = generateNormalisedLithium()
@@ -48,6 +51,10 @@ def calculatepH(plot=False):
     pH_prior = preprocessing.pH_prior
     co2_prior = preprocessing.co2_prior
     dic_prior = preprocessing.dic_prior
+
+    scaling_edges = numpy.arange(-1,1e3,0.1)
+    calcium_upscaling_prior = Sampling.Distribution(scaling_edges,"Flat",(0,3))
+    calcium_downscaling_prior = Sampling.Distribution(scaling_edges,"Flat",(0,3))
 
     # Hoist out of start loop
     total_count = 0
@@ -103,10 +110,10 @@ def calculatepH(plot=False):
         else:
             Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
             pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws,d11B4,preprocessing.epsilon)
-            pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.01),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
+            pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.05),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
             
             pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-            pH_gp = pH_gp.setKernel("rbf",(0.1,10),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+            pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
             pH = pH_gp.means[0]
 
             if not numpy.any(numpy.isnan(pH)):
@@ -118,19 +125,27 @@ def calculatepH(plot=False):
                 
                 dic_series = [initial_dic+relative*dic_fraction*initial_dic for relative in relative_co2]
                 dic_sensible = numpy.all(dic_series[0]>0) and numpy.all(dic_series[1]>0) and numpy.all(dic_series[0]<1e6) and numpy.all(dic_series[1]<1e6)
-                
+                print("DIC: "+str(numpy.min(dic_series[-1])) +","+ str(initial_dic[0]) +","+ str(numpy.max(dic_series[-1]))+","+str(dic_fraction[0]))
+
                 if dic_sensible:
                     csys_variable_dic = [Csys(pHtot=pH,DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=calcium,Mg=magnesium,unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.means,dic_series,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
                     
                     dic = [csys["DIC"]*1e6 for csys in csys_variable_dic]
                     co2_samples = [csys["pCO2"]*1e6 for csys in csys_variable_dic]
+                    omega = (csys_variable_dic[-1].Ca*csys_variable_dic[-1].CO3)/csys_variable_dic[-1].Ks.KspC
+                    calcium_downscaling = numpy.max(omega)/15
+                    calcium_upscaling = 0.5/numpy.min(omega)
+
+                    calcium_downscaling_probability = calcium_downscaling_prior.getProbability(calcium_downscaling)
+                    calcium_upscaling_probability = calcium_upscaling_prior.getProbability(calcium_upscaling)
+
                     co2 = co2_samples[0]
                     
                     dic_probability = numpy.array([dic_prior[0].getProbability(dic) for dic in dic[0]])
                     pH_probability = numpy.array([pH_prior[0].getProbability(pH) for pH in pH[0]])
                     co2_probability = numpy.array([co2_prior[0].getProbability(co2) for co2 in co2[0]])
 
-                    if any(dic_probability==0) or any(pH_probability==0) or any(co2_probability==0):
+                    if any(dic_probability==0) or any(pH_probability==0) or any(co2_probability==0) or calcium_downscaling_probability==0 or calcium_upscaling_probability==0:
                         pass
                     else:
                         d11Bsw_to_store = [d11Bsw_initial+(d11Bsw_scaling/2)*numpy.squeeze(shape) for shape in normalised_shapes]
@@ -138,9 +153,26 @@ def calculatepH(plot=False):
 
                         Kb_25 = [Bunch({"KB":kgen.calc_K("KB",TempC=25,Ca=calcium,Mg=magnesium)}) for calcium,magnesium in zip(calcium_gp.means,magnesium_gp.means,strict=True)]
                         d11B4_interpolated = [boron_isotopes.calculate_d11B4(pH,Kb,d11Bsw,preprocessing.epsilon) for pH,d11Bsw,Kb in zip(pH_gp.means,d11Bsw_to_store,Kb_25,strict=True)]
+
+                        if calcium_downscaling>1:
+                            calcium_gp.means = [calcium/calcium_downscaling for calcium in calcium_gp.means]
+                        if calcium_upscaling>1:
+                            calcium_gp.means = [calcium*calcium_upscaling for calcium in calcium_gp.means]
                         
+                        Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+                        pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws,d11B4,preprocessing.epsilon)
+                        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.05),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
+                        
+                        pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
+                        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
                         pH_log_probability = numpy.array([pH_prior[0].getLogProbability(pH) for pH in pH[0]])
                         pH_cumulative_probability = sum(pH_log_probability)
+
+                        csys_variable_dic = [Csys(pHtot=pH,DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=calcium,Mg=magnesium,unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.means,dic_series,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+                    
+                        dic = [csys["DIC"]*1e6 for csys in csys_variable_dic]
+                        co2_samples = [csys["pCO2"]*1e6 for csys in csys_variable_dic]
+                        omega = [(csys.Ca*csys.CO3)/csys.Ks.KspC for csys in csys_variable_dic]
                         
                         # Don't need DIC or CO2 cumulative because they're flat distributions, either 0 or equal everywhere
                         #co2_cumulative_probability = sum(numpy.log(co2_probability))
@@ -164,6 +196,7 @@ def calculatepH(plot=False):
                                     .addField("d11Bsw_scaling",d11Bsw_scaling)
                                     .addField("dic_initial",initial_dic[0])
                                     .addField("dic_fraction",dic_fraction[0])
+                                    .addField("omega",omega)
                     )
     markov_chain = markov_chain.addSample(initial_sample)
 
@@ -190,6 +223,8 @@ def calculatepH(plot=False):
         strontium_scaling_jitter_sampler.getSamples(1)
         lithium_scaling_jitter_sampler.getSamples(1)
 
+        calcium_gp,magnesium_gp = processCalciumMagnesium.calculateCalciumMagnesium()
+
         strontium_scaling = markov_chain.final("strontium_scaling") + strontium_scaling_jitter_sampler.samples[0]
         lithium_scaling = markov_chain.final("lithium_scaling") + lithium_scaling_jitter_sampler.samples[0]
 
@@ -211,10 +246,10 @@ def calculatepH(plot=False):
 
         Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws,d11B4,preprocessing.epsilon)
-        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.01),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
+        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.05),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
         
         pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-        pH_gp = pH_gp.setKernel("rbf",(0.1,10),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         pH = pH_gp.means[0]
 
         if not numpy.any(numpy.isnan(pH)) and strontium_scaling_prior.getProbability(strontium_scaling)>0 and lithium_scaling_prior.getProbability(lithium_scaling)>0:
@@ -240,12 +275,20 @@ def calculatepH(plot=False):
                 
                 dic = [csys["DIC"]*1e6 for csys in csys_variable_dic]
                 co2_samples = [csys["pCO2"]*1e6 for csys in csys_variable_dic]
+
+                omega = (csys_variable_dic[-1].Ca*csys_variable_dic[-1].CO3)/csys_variable_dic[-1].Ks.KspC
+                calcium_downscaling = numpy.max(omega)/15
+                calcium_upscaling = 0.5/numpy.min(omega)
+
+                calcium_downscaling_probability = calcium_downscaling_prior.getProbability(calcium_downscaling)
+                calcium_upscaling_probability = calcium_upscaling_prior.getProbability(calcium_upscaling)
+
                 co2 = co2_samples[0]
 
                 d11Bsw_probability = numpy.squeeze(numpy.array([d11Bsw_prior.getProbability(d11Bsw) for d11Bsw_prior,d11Bsw in zip(d11Bsw_priors,d11Bsws,strict=True)]))
                 d11Bsw_scaling_probability = d11Bsw_scaling_prior.getProbability(d11Bsw_scaling_jittered)
                 d11Bsw_initial_probability = d11Bsw_initial_prior.getProbability(d11Bsw_initial_jittered)
-                if any(d11Bsw_probability==0) or d11Bsw_scaling_probability==0 or d11Bsw_initial_probability==0:
+                if any(d11Bsw_probability==0) or d11Bsw_scaling_probability==0 or d11Bsw_initial_probability==0  or calcium_downscaling_probability==0 or calcium_upscaling_probability==0:
                     impossible = True
                 else:
                     d11Bsw_cumulative_probability = sum(numpy.log(d11Bsw_probability))
@@ -273,8 +316,30 @@ def calculatepH(plot=False):
 
             if keep:
                 d11Bsw_to_store = [d11Bsw_initial_jittered+(d11Bsw_scaling_jittered/2)*numpy.squeeze(shape) for shape in normalised_shapes]
+
+                if calcium_downscaling>1:
+                    calcium_gp.means = [calcium/calcium_downscaling for calcium in calcium_gp.means]
+                if calcium_upscaling>1:
+                    calcium_gp.means = [calcium*calcium_upscaling for calcium in calcium_gp.means]
+                        
+                Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+                pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws,d11B4,preprocessing.epsilon)
+                pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.05),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
+                
+                pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
+                pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+                pH_log_probability = numpy.array([pH_prior[0].getLogProbability(pH) for pH in pH[0]])
+                pH_cumulative_probability = sum(pH_log_probability)
+
+                csys_variable_dic = [Csys(pHtot=pH,DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=calcium,Mg=magnesium,unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.means,dic_series,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+            
+                dic = [csys["DIC"]*1e6 for csys in csys_variable_dic]
+                co2_samples = [csys["pCO2"]*1e6 for csys in csys_variable_dic]
+                omega = [(csys.Ca*csys.CO3)/csys.Ks.KspC for csys in csys_variable_dic]
+                      
                 pH_to_store = pH_gp.means
                 co2_to_store = co2_samples
+
                 Kb_25 =  [Bunch({"KB":kgen.calc_K("KB",TempC=25,Ca=calcium,Mg=magnesium)}) for calcium,magnesium in zip(calcium_gp.means,magnesium_gp.means,strict=True)]
                 d11B4_interpolated = [boron_isotopes.calculate_d11B4(pH,Kb,d11Bsw,preprocessing.epsilon) for pH,d11Bsw,Kb in zip(pH_gp.means,d11Bsw_to_store,Kb_25,strict=True)]
                 
@@ -294,6 +359,7 @@ def calculatepH(plot=False):
                                                 .addField("d11Bsw_scaling",d11Bsw_scaling_jittered)
                                                 .addField("dic_initial",initial_dic[0])
                                                 .addField("dic_fraction",dic_fraction[0])
+                                                .addField("omega",omega)
                     )
                 
                 markov_chain = markov_chain.addSample(current_sample)
@@ -306,7 +372,7 @@ def calculatepH(plot=False):
     print(str(round(rejects/total_count,4)*100)+"% rejected")
     print(str(round(len(markov_chain)/total_count,4)*100)+"% accepted")
     
-    markov_chain.toJSON("./markov_chain.json")
+    markov_chain.toJSON("./Data/Output/markov_chain.json")
 
     
     # exec(open("Code/Analysis/plot.py").read())

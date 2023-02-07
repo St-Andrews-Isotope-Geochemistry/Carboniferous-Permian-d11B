@@ -5,13 +5,13 @@ from geochemistry_helpers import Sampling,GaussianProcess
 def importData(name=None):
     import pandas
     if name.lower()=="boron":
-        data = pandas.read_excel("./Data/Data_Compilation_SrCOB.xlsx",usecols="A,L,M,Q,U,V",names=["horizon","age","age_uncertainty","d18O","d11B4_uncertainty","d11B4"],sheet_name="Matlab")
+        data = pandas.read_excel("./Data/Input/Data_Compilation_SrCOB.xlsx",usecols="A:C,G,I,J",names=["horizon","age","age_uncertainty","d18O","d11B4_uncertainty","d11B4"],sheet_name="Matlab")
     elif name.lower()=="strontium":
-        data = pandas.read_excel("./Data/Data_Compilation_SrCOB.xlsx",usecols="C:D,L:M",names=["strontium","strontium_uncertainty","age","age_uncertainty"],sheet_name="Matlab")
+        data = pandas.read_excel("./Data/Input/Data_Compilation_SrCOB.xlsx",usecols="B:E",names=["age","age_uncertainty","strontium","strontium_uncertainty"],sheet_name="Matlab")
     elif name.lower()=="calcium_magnesium":
-        data = pandas.read_excel("./Data/Boundary_Conditions.xlsx",header=1,usecols="A,D,G",names=["age","calcium","magnesium"],sheet_name="Seawater_Relevant")
+        data = pandas.read_excel("./Data/Input/Boundary_Conditions.xlsx",header=1,usecols="A,D,G",names=["age","calcium","magnesium"],sheet_name="Seawater_Relevant")
     elif name.lower()=="lithium":
-        data = pandas.read_excel("./Data/Lithium.xlsx",usecols="A:B",names=["age","lithium"],sheet_name="Matlab",header=1)
+        data = pandas.read_excel("./Data/Input/Lithium.xlsx",usecols="A:B",names=["age","lithium"],sheet_name="Matlab",header=1)
     return data
 def recombineData(data,name):
     if name.lower()=="boron":
@@ -51,8 +51,9 @@ pH_x = numpy.arange(1,14,0.01)
 carbon_x = numpy.arange(-1e5,1e6,10)
 carbon_logx = numpy.arange(-50,50,0.01)
 d11B_x = numpy.arange(-50,100,0.1)
-number_of_samples = 100
+number_of_samples = 1000
 
+initial_dic_edges = [200,6000]
 dic_edges = [200,20000]
 
 
@@ -67,7 +68,7 @@ interpolation_ages = [getData("boron")["age"].to_numpy(),equally_spaced_ages]
 # Can reuse the same one if the prior is the same across the time series
 d11B4_priors = [Sampling.Sampler(d11B_x,"Gaussian",(d11B4,d11B4_uncertainty),"Monte_Carlo",location=age).normalise() for age,d11B4,d11B4_uncertainty in zip(data["age"].to_numpy(),data["d11B4"].to_numpy(),data["d11B4_uncertainty"].to_numpy(),strict=True)]
 pH_prior = [Sampling.Distribution(pH_x,"Gaussian",(8,1)).normalise()]
-co2_prior = [Sampling.Distribution(carbon_x,"Flat",(50,5000)).normalise()]
+co2_prior = [Sampling.Distribution(carbon_x,"Flat",(30,8000)).normalise()]
 dic_prior = [Sampling.Sampler(carbon_x,"Flat",(dic_edges[0],dic_edges[1]),"Monte_Carlo").normalise()]
 
 strontium_scaling_prior = Sampling.Sampler(numpy.arange(-2,2,0.01),"Flat",(-1,1),"Monte_Carlo").normalise()
@@ -76,7 +77,7 @@ d11Bsw_scaling_prior = Sampling.Sampler(numpy.arange(-50,50,0.01),"Flat",(-40,40
 
 d11B4_jitter_samplers = [Sampling.Sampler(numpy.arange(-1,1,0.001),"Gaussian",(0,uncertainty/10),"Monte_Carlo").normalise() for uncertainty in data["d11B4_uncertainty"].to_numpy()]
 
-initial_dic_sampler = [Sampling.Sampler(carbon_x,"Flat",(dic_edges[0],dic_edges[1]),"Monte_Carlo").normalise()]
+initial_dic_sampler = [Sampling.Sampler(carbon_x,"Flat",(initial_dic_edges[0],initial_dic_edges[1]),"Monte_Carlo").normalise()]
 initial_dic_jitter_sampler = [Sampling.Sampler(numpy.arange(-1e4,1e4,10),"Gaussian",(0,500),"Monte_Carlo").normalise()]
 
 dic_fraction_sampler = [Sampling.Sampler(numpy.arange(-5,5,0.01),"Flat",(-1,2),"Monte_Carlo").normalise()]
