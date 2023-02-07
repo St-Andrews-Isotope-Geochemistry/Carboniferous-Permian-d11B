@@ -16,7 +16,7 @@ def makeLithiumGP(plot=False):
     lithium_no_mean_gp = lithium_gp.setKernel("rbf",(0.1,6),specified_mean=0).query(interpolation_ages)
     lithium_combined_gp = lithium_no_mean_gp.addLocalMean(lithium_mean_gp).getSamples(1000)
 
-    lithium_combined_gp.toJSON("./Data/lithium_GP.json")
+    lithium_combined_gp.toJSON("./Data/Output/lithium_GP.json")
 
     if plot:        
         from matplotlib import pyplot
@@ -38,7 +38,7 @@ def generateNormalisedLithium(plot=False):
 
     interpolation_ages = [data["age"].to_numpy(),preprocessing.equally_spaced_ages]
 
-    with open("./Data/lithium_GP.json") as file:
+    with open("./Data/Output/lithium_GP.json") as file:
         lithium_data = json.loads(file.read())
     lithium_means = numpy.array(lithium_data["means"][0])
 

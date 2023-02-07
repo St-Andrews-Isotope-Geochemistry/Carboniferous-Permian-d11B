@@ -16,7 +16,7 @@ def makeStrontiumGP(plot=False):
     strontium_no_mean_gp = strontium_gp.setKernel("rbf",(0.00005,10),specified_mean=0).query(interpolation_ages)
     strontium_combined_gp = strontium_no_mean_gp.addLocalMean(strontium_mean_gp).getSamples(1000)
 
-    strontium_combined_gp.toJSON("./Data/Strontium_GP.json")
+    strontium_combined_gp.toJSON("./Data/Output/strontium_GP.json")
 
     if plot:        
         from matplotlib import pyplot
@@ -38,7 +38,7 @@ def generateNormalisedStrontium(plot=False):
 
     interpolation_ages = [data["age"].to_numpy(),preprocessing.equally_spaced_ages]
 
-    with open("./Data/Strontium_GP.json") as file:
+    with open("./Data/Output/strontium_GP.json") as file:
         strontium_data = json.loads(file.read())
     strontium_means = numpy.array(strontium_data["means"][0])
 
