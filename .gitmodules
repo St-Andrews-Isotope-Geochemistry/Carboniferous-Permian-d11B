@@ -7,3 +7,9 @@
 [submodule "Code/Dependencies/MyAMI"]
 	path = Code/Dependencies/MyAMI
 	url = https://github.com/St-Andrews-Isotope-Geochemistry/MyAMI
+[submodule ".submodules/geochemistry_helpers"]
+	path = .submodules/geochemistry_helpers
+	url = https://github.com/St-Andrews-Isotope-Geochemistry/geostats
+[submodule ".submodules/cbsyst"]
+	path = .submodules/cbsyst
+	url = /mnt/c/Users/Ross/Documents/Work/Postdoc/St_Andrews/Repositories/Libraries/Python/cbsyst/
