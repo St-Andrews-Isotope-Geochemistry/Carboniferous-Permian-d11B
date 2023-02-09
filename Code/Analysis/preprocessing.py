@@ -51,7 +51,7 @@ pH_x = numpy.arange(1,14,0.01)
 carbon_x = numpy.arange(-1e5,1e6,10)
 carbon_logx = numpy.arange(-50,50,0.01)
 d11B_x = numpy.arange(-50,100,0.1)
-number_of_samples = 1000
+number_of_samples = 5000
 
 initial_dic_edges = [200,6000]
 dic_edges = [200,20000]

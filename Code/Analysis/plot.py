@@ -84,7 +84,7 @@ for x_index in range(len(x)-1):
 
 
 axes_1[4].set_ylabel("pH")
-axes_1[4].set_ylim((7.0,8.5))
+axes_1[4].set_ylim((7.0,9.0))
 
 minmax = (max(preprocessing.equally_spaced_ages),min(preprocessing.equally_spaced_ages))
 dic_gp.plotArea(axis=axes_1[5],group=1,color="red",alpha=0.3)
@@ -92,7 +92,7 @@ dic_gp.plotMedian(axis=axes_1[5],group=1,color="red",zorder=2)
 
 
 axes_1[5].set_ylabel("DIC")
-axes_1[5].set_ylim((0,20000))
+axes_1[5].set_ylim((0,10000))
 
 co2_data = pandas.read_excel("./Data/Input/CO2.xlsx",usecols="A:B",names=["age","co2"],header=0,sheet_name="Matlab")
 axes_1[6].scatter(co2_data["age"],co2_data["co2"],color="black",marker=".",zorder=3)
@@ -101,9 +101,11 @@ co2_gp.plotArea(axis=axes_1[6],group=1,color="blue",alpha=0.3)
 co2_gp.plotMedian(axis=axes_1[6],group=1,color="blue",zorder=2)
 
 axes_1[6].set_ylabel("CO$_2$")
-axes_1[6].set_ylim((0,10000))
+axes_1[6].set_ylim((0,6000))
 
 axes_1[-1].set_xlabel("Age (Ma)")
 axes_1[-1].set_xlim((max(preprocessing.equally_spaced_ages),min(preprocessing.equally_spaced_ages)))
+
+figure_1.savefig("./Figures/stacked_plot.png",dpi=600)
 
 a = 5

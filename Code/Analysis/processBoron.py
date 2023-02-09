@@ -28,8 +28,8 @@ def calculatepH(plot=False):
     strontium_shapes = normalised_strontium_gp.means
     lithium_shapes = normalised_lithium_gp.means
 
-    strontium_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-1,1,1e-3),"Gaussian",(0,0.02),"Monte_Carlo").normalise() 
-    lithium_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-1,1,1e-3),"Gaussian",(0,0.02),"Monte_Carlo").normalise()  
+    strontium_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-1,1,1e-3),"Gaussian",(0,0.05),"Monte_Carlo").normalise() 
+    lithium_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-1,1,1e-3),"Gaussian",(0,0.05),"Monte_Carlo").normalise()  
     d11Bsw_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,0.5),"Monte_Carlo").normalise()  
     d11Bsw_initial_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,1),"Monte_Carlo").normalise()
 
