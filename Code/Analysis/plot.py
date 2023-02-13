@@ -1,7 +1,6 @@
 from matplotlib import pyplot
 from geochemistry_helpers import Sampling,GaussianProcess
 from processStrontium import makeStrontiumGP
-from processLithium import makeLithiumGP
 import numpy,pandas
 import preprocessing,processCalciumMagnesium
 
@@ -17,6 +16,7 @@ dic_gp = GaussianProcess().setQueryLocations(preprocessing.interpolation_ages,pr
 d11Bsw_gp = GaussianProcess().setQueryLocations(preprocessing.interpolation_ages,preprocessing.d11B_x)
 pH_gp = GaussianProcess().constrain(preprocessing.pH_prior).setQueryLocations(preprocessing.interpolation_ages)    
 co2_gp = GaussianProcess().constrain(preprocessing.co2_prior).setQueryLocations(preprocessing.interpolation_ages)
+saturation_state_gp = GaussianProcess().setQueryLocations(preprocessing.interpolation_ages,preprocessing.saturation_state_x)
 
 
 # d11B4_gp.fromMCMCSamples(d11B4_markov_chain.accumulate("d11B4"))
@@ -25,6 +25,7 @@ d11Bsw_gp.fromMCMCSamples(markov_chain.accumulate("d11Bsw"))
 pH_gp.fromMCMCSamples(markov_chain.accumulate("pH"))
 co2_gp.fromMCMCSamples(markov_chain.accumulate("co2"))
 dic_gp.fromMCMCSamples(markov_chain.accumulate("dic"))
+saturation_state_gp.fromMCMCSamples(markov_chain.accumulate("omega"))
 
 d18O = preprocessing.data["d18O"].to_numpy()
 temperature = 15.7 - 4.36*((d18O-(-1))) + 0.12*((d18O-(-1))**2)
@@ -34,7 +35,6 @@ temperature_gp = temperature_gp.setKernel("rbf",(1,5),specified_mean=0).query(pr
 
 calcium_gp,magnesium_gp = processCalciumMagnesium.calculateCalciumMagnesium()
 strontium_gp = makeStrontiumGP()
-lithium_gp = makeLithiumGP()
 
 Kb = Bunch({"KB":kgen.calc_K("KB",TempC=temperature,Ca=calcium_gp.means[0][0],Mg=magnesium_gp.means[0][0])})
 pH_values = boron_isotopes.calculate_pH(Kb,30,preprocessing.data["d11B4"].to_numpy(),preprocessing.epsilon)
@@ -59,13 +59,9 @@ strontium_gp.plotMean(color="black",axis=axes_1[1],zorder=2)
 strontium_gp.plotConstraints(color="#e98e42",axis=axes_1[1],fmt="o",zorder=1)
 axes_1[1].set_ylabel("$^{87}/_{86}$Sr")
 
-lithium_gp.plotMean(color="black",axis=axes_1[2],zorder=2)
-lithium_gp.plotConstraints(color="#7bc660",axis=axes_1[2],fmt="o",zorder=1)
-axes_1[2].set_ylabel("$\delta^{7}$Li")
-
-d11Bsw_gp.plotPcolor(axis=axes_1[3],invert_x=True,colourbar=False,map="Purples",mask=True,vmin=0.001,vmax=0.04)
-axes_1[3].set_ylabel("$\delta^{11}B_{sw}$")
-axes_1[3].set_ylim((20,40))
+d11Bsw_gp.plotPcolor(axis=axes_1[2],invert_x=True,colourbar=False,map="Purples",mask=True,vmin=0.001,vmax=0.04)
+axes_1[2].set_ylabel("$\delta^{11}B_{sw}$")
+axes_1[2].set_ylim((20,40))
 
 x = pH_gp.queries[-1][0].bin_midpoints
 y = numpy.array([query.location for query in pH_gp.queries[-1]])
@@ -80,19 +76,26 @@ for x_index in range(len(x)-1):
         if probabilities[x_index,y_index]!=0:
             rect = Rectangle((y[y_index],x[x_index]), y[y_index+1]-y[y_index], x[x_index+1]-x[x_index], 
                             facecolor=cmap(255-int((x[x_index]-7.5)*(255/0.75))), alpha=probabilities[x_index,y_index], edgecolor='none')
-            axes_1[4].add_patch(rect)
+            axes_1[3].add_patch(rect)
 
 
-axes_1[4].set_ylabel("pH")
-axes_1[4].set_ylim((7.0,9.0))
-
-minmax = (max(preprocessing.equally_spaced_ages),min(preprocessing.equally_spaced_ages))
-dic_gp.plotArea(axis=axes_1[5],group=1,color="red",alpha=0.3)
-dic_gp.plotMedian(axis=axes_1[5],group=1,color="red",zorder=2)
+axes_1[3].set_ylabel("pH")
+axes_1[3].set_ylim((7.0,9.0))
 
 
-axes_1[5].set_ylabel("DIC")
-axes_1[5].set_ylim((0,10000))
+## DIC
+dic_gp.plotArea(axis=axes_1[4],group=1,color="red",alpha=0.3)
+dic_gp.plotMedian(axis=axes_1[4],group=1,color="red",zorder=2)
+
+axes_1[4].set_ylabel("DIC")
+axes_1[4].set_ylim((0,10000))
+
+## Saturation state
+saturation_state_gp.plotArea(axis=axes_1[5],group=1,color="#1dab4c",alpha=0.3)
+saturation_state_gp.plotMedian(axis=axes_1[5],group=1,color="#1dab4c",zorder=2)
+
+axes_1[5].set_ylabel("Saturation state")
+axes_1[5].set_ylim((0,20))
 
 co2_data = pandas.read_excel("./Data/Input/CO2.xlsx",usecols="A:B",names=["age","co2"],header=0,sheet_name="Matlab")
 axes_1[6].scatter(co2_data["age"],co2_data["co2"],color="black",marker=".",zorder=3)

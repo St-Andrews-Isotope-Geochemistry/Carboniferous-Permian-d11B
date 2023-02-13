@@ -8,7 +8,6 @@ from cbsyst.helpers import Bunch
 import kgen
 
 from processStrontium import makeStrontiumGP,generateNormalisedStrontium
-from processLithium import makeLithiumGP,generateNormalisedLithium
 import preprocessing,processCalciumMagnesium
 
 def calculatepH(plot=False):
@@ -20,16 +19,12 @@ def calculatepH(plot=False):
         return True
     
     strontium_gp = makeStrontiumGP()
-    lithium_gp = makeLithiumGP()
 
     normalised_strontium_gp = generateNormalisedStrontium()
-    normalised_lithium_gp = generateNormalisedLithium()
 
     strontium_shapes = normalised_strontium_gp.means
-    lithium_shapes = normalised_lithium_gp.means
 
-    strontium_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-1,1,1e-3),"Gaussian",(0,0.05),"Monte_Carlo").normalise() 
-    lithium_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-1,1,1e-3),"Gaussian",(0,0.05),"Monte_Carlo").normalise()  
+    # strontium_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-1,1,1e-3),"Gaussian",(0,0.05),"Monte_Carlo").normalise()
     d11Bsw_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,0.5),"Monte_Carlo").normalise()  
     d11Bsw_initial_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,1),"Monte_Carlo").normalise()
 
@@ -43,8 +38,7 @@ def calculatepH(plot=False):
 
 
     # Hoist out of preprocessing
-    strontium_scaling_prior = preprocessing.strontium_scaling_prior
-    lithium_scaling_prior = preprocessing.lithium_scaling_prior
+    # strontium_scaling_prior = preprocessing.strontium_scaling_prior
     d11Bsw_priors = None
     d11Bsw_initial_prior = None
     d11Bsw_scaling_prior = preprocessing.d11Bsw_scaling_prior
@@ -84,11 +78,9 @@ def calculatepH(plot=False):
         d11Bsw_priors = [Sampling.Sampler(preprocessing.d11B_x,"Flat",(range[0],range[1]),"Monte_Carlo",location=age).normalise() for age,range in zip(preprocessing.data["age"].to_numpy(),d11Bsw_range,strict=True)]
         d11Bsw_initial_prior = d11Bsw_priors[0]
         
-        strontium_scaling_prior.getSamples(1)
-        lithium_scaling_prior.getSamples(1)
+        # strontium_scaling_prior.getSamples(1)
 
-        strontium_scaling = strontium_scaling_prior.samples[0]
-        lithium_scaling = lithium_scaling_prior.samples[0]
+        # strontium_scaling = strontium_scaling_prior.samples[0]
 
         d11Bsw_initial_prior.getSamples(1)
         d11Bsw_scaling_prior.getSamples(1)
@@ -96,10 +88,10 @@ def calculatepH(plot=False):
         d11Bsw_initial = d11Bsw_initial_prior.samples[0]
         d11Bsw_scaling = d11Bsw_scaling_prior.samples[0]
 
-        shapes = [strontium*strontium_scaling + lithium*lithium_scaling for strontium,lithium in zip(strontium_shapes,lithium_shapes,strict=True)]
-        normalised_shapes = [(shape-min(shapes[-1][0]))/((max(shapes[-1][0])-min(shapes[-1][0]))/2)-1 for shape in shapes]
+        # shapes = [strontium*strontium_scaling for strontium in strontium_shapes]
+        # normalised_shapes = [(shape-min(shapes[-1][0]))/((max(shapes[-1][0])-min(shapes[-1][0]))/2)-1 for shape in shapes]
 
-        d11Bsws = d11Bsw_initial+(d11Bsw_scaling/2)*numpy.squeeze(normalised_shapes[0])
+        d11Bsws = d11Bsw_initial+(d11Bsw_scaling/2)*numpy.squeeze(strontium_shapes[0])
     
         d11Bsw_probability = numpy.squeeze(numpy.array([d11Bsw_prior.getProbability(d11Bsw) for d11Bsw_prior,d11Bsw in zip(d11Bsw_priors,d11Bsws,strict=True)]))
         d11Bsw_initial_probability = d11Bsw_initial_prior.getProbability(d11Bsw_initial)
@@ -148,7 +140,7 @@ def calculatepH(plot=False):
                     if any(dic_probability==0) or any(pH_probability==0) or any(co2_probability==0) or calcium_downscaling_probability==0 or calcium_upscaling_probability==0:
                         pass
                     else:
-                        d11Bsw_to_store = [d11Bsw_initial+(d11Bsw_scaling/2)*numpy.squeeze(shape) for shape in normalised_shapes]
+                        d11Bsw_to_store = [d11Bsw_initial+(d11Bsw_scaling/2)*numpy.squeeze(shape) for shape in strontium_shapes]
                         d11Bsw_cumulative_probability = sum(numpy.log(d11Bsw_probability))
 
                         Kb_25 = [Bunch({"KB":kgen.calc_K("KB",TempC=25,Ca=calcium,Mg=magnesium)}) for calcium,magnesium in zip(calcium_gp.means,magnesium_gp.means,strict=True)]
@@ -184,19 +176,17 @@ def calculatepH(plot=False):
                                           .addField("d11B4",[d11B4]))
     d11B4_markov_chain = d11B4_markov_chain.addSample(initial_d11B4_sample)
 
-    initial_sample = (initial_sample.addField("probability",cumulative_probability)
-                                    .addField("d11Bsw",d11Bsw_to_store)
-                                    .addField("d11B4",d11B4_interpolated)
-                                    .addField("pH",pH_gp.means)
-                                    .addField("co2",co2_samples)
-                                    .addField("dic",dic)
-                                    .addField("strontium_scaling",strontium_scaling)
-                                    .addField("lithium_scaling",lithium_scaling)
-                                    .addField("d11Bsw_initial",d11Bsw_initial)
-                                    .addField("d11Bsw_scaling",d11Bsw_scaling)
-                                    .addField("dic_initial",initial_dic[0])
-                                    .addField("dic_fraction",dic_fraction[0])
-                                    .addField("omega",omega)
+    initial_sample = (initial_sample.addField("probability",cumulative_probability,precision=5)
+                                    .addField("d11Bsw",d11Bsw_to_store,precision=2)
+                                    .addField("d11B4",d11B4_interpolated,precision=2)
+                                    .addField("pH",pH_gp.means,precision=3)
+                                    .addField("co2",co2_samples,precision=0)
+                                    .addField("dic",dic,precision=0)
+                                    .addField("d11Bsw_initial",d11Bsw_initial,precision=2)
+                                    .addField("d11Bsw_scaling",d11Bsw_scaling,precision=3)
+                                    .addField("dic_initial",initial_dic[0],precision=0)
+                                    .addField("dic_fraction",dic_fraction[0],precision=3)
+                                    .addField("omega",omega,precision=2)
                     )
     markov_chain = markov_chain.addSample(initial_sample)
 
@@ -220,13 +210,11 @@ def calculatepH(plot=False):
                 if r<=probability_difference:
                     d11B4_accept = True
 
-        strontium_scaling_jitter_sampler.getSamples(1)
-        lithium_scaling_jitter_sampler.getSamples(1)
+        # strontium_scaling_jitter_sampler.getSamples(1)
 
         calcium_gp,magnesium_gp = processCalciumMagnesium.calculateCalciumMagnesium()
 
-        strontium_scaling = markov_chain.final("strontium_scaling") + strontium_scaling_jitter_sampler.samples[0]
-        lithium_scaling = markov_chain.final("lithium_scaling") + lithium_scaling_jitter_sampler.samples[0]
+        # strontium_scaling = markov_chain.final("strontium_scaling") + strontium_scaling_jitter_sampler.samples[0]
 
         d11Bsw_range = preprocessing.getd11BswRange(d11B4)
         d11Bsw_priors = [Sampling.Sampler(preprocessing.d11B_x,"Flat",(range[0],range[1]),"Monte_Carlo",location=age).normalise() for age,range in zip(preprocessing.data["age"].to_numpy(),d11Bsw_range,strict=True)]
@@ -238,11 +226,11 @@ def calculatepH(plot=False):
         d11Bsw_scaling_jittered = markov_chain.final("d11Bsw_scaling") + d11Bsw_scaling_jitter_sampler.samples[0]
 
 
-        shapes = [strontium*strontium_scaling + lithium*lithium_scaling for strontium,lithium in zip(strontium_shapes,lithium_shapes,strict=True)]
-        normalised_shapes = [(shape-min(shapes[-1][0]))/((max(shapes[-1][0])-min(shapes[-1][0]))/2)-1 for shape in shapes]
+        # shapes = [strontium*strontium_scaling for strontium in strontium_shapes]
+        # normalised_shapes = [(shape-min(shapes[-1][0]))/((max(shapes[-1][0])-min(shapes[-1][0]))/2)-1 for shape in shapes]
 
 
-        d11Bsws = d11Bsw_initial_jittered+(d11Bsw_scaling_jittered/2)*numpy.squeeze(normalised_shapes[0])
+        d11Bsws = d11Bsw_initial_jittered+(d11Bsw_scaling_jittered/2)*numpy.squeeze(strontium_shapes[0])
 
         Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws,d11B4,preprocessing.epsilon)
@@ -252,7 +240,7 @@ def calculatepH(plot=False):
         pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         pH = pH_gp.means[0]
 
-        if not numpy.any(numpy.isnan(pH)) and strontium_scaling_prior.getProbability(strontium_scaling)>0 and lithium_scaling_prior.getProbability(lithium_scaling)>0:
+        if not numpy.any(numpy.isnan(pH)):
             initial_dic_jitter = preprocessing.initial_dic_jitter_sampler[0].getSamples(1).samples
             dic_fraction_jitter = preprocessing.dic_fraction_jitter_sampler[0].getSamples(1).samples
 
@@ -315,7 +303,7 @@ def calculatepH(plot=False):
                         keep = True            
 
             if keep:
-                d11Bsw_to_store = [d11Bsw_initial_jittered+(d11Bsw_scaling_jittered/2)*numpy.squeeze(shape) for shape in normalised_shapes]
+                d11Bsw_to_store = [d11Bsw_initial_jittered+(d11Bsw_scaling_jittered/2)*numpy.squeeze(shape) for shape in strontium_shapes]
 
                 if calcium_downscaling>1:
                     calcium_gp.means = [calcium/calcium_downscaling for calcium in calcium_gp.means]
@@ -347,19 +335,17 @@ def calculatepH(plot=False):
                                                       .addField("d11B4",[d11B4]))
                 d11B4_markov_chain = d11B4_markov_chain.addSample(current_d11B4_sample)
 
-                current_sample = (current_sample.addField("probability",cumulative_probability)
-                                                .addField("d11Bsw",d11Bsw_to_store)
-                                                .addField("d11B4",d11B4_interpolated)
-                                                .addField("pH",pH_to_store)
-                                                .addField("co2",co2_to_store)
-                                                .addField("dic",dic)
-                                                .addField("strontium_scaling",strontium_scaling)
-                                                .addField("lithium_scaling",lithium_scaling)
-                                                .addField("d11Bsw_initial",d11Bsw_initial_jittered)
-                                                .addField("d11Bsw_scaling",d11Bsw_scaling_jittered)
-                                                .addField("dic_initial",initial_dic[0])
-                                                .addField("dic_fraction",dic_fraction[0])
-                                                .addField("omega",omega)
+                current_sample = (current_sample.addField("probability",cumulative_probability,precision=5)
+                                                .addField("d11Bsw",d11Bsw_to_store,precision=2)
+                                                .addField("d11B4",d11B4_interpolated,precision=2)
+                                                .addField("pH",pH_to_store,precision=3)
+                                                .addField("co2",co2_to_store,precision=0)
+                                                .addField("dic",dic,precision=0)
+                                                .addField("d11Bsw_initial",d11Bsw_initial_jittered,precision=2)
+                                                .addField("d11Bsw_scaling",d11Bsw_scaling_jittered,precision=3)
+                                                .addField("dic_initial",initial_dic[0],precision=0)
+                                                .addField("dic_fraction",dic_fraction[0],precision=3)
+                                                .addField("omega",omega,precision=2)
                     )
                 
                 markov_chain = markov_chain.addSample(current_sample)

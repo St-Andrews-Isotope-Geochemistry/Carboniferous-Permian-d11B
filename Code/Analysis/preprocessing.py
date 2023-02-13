@@ -10,8 +10,6 @@ def importData(name=None):
         data = pandas.read_excel("./Data/Input/Data_Compilation_SrCOB.xlsx",usecols="B:E",names=["age","age_uncertainty","strontium","strontium_uncertainty"],sheet_name="Matlab")
     elif name.lower()=="calcium_magnesium":
         data = pandas.read_excel("./Data/Input/Boundary_Conditions.xlsx",header=1,usecols="A,D,G",names=["age","calcium","magnesium"],sheet_name="Seawater_Relevant")
-    elif name.lower()=="lithium":
-        data = pandas.read_excel("./Data/Input/Lithium.xlsx",usecols="A:B",names=["age","lithium"],sheet_name="Matlab",header=1)
     return data
 def recombineData(data,name):
     if name.lower()=="boron":
@@ -24,8 +22,6 @@ def refineData(data,name):
         data = data.dropna(subset=["age","d11B4","d18O"])
     elif name.lower()=="strontium":
         data = data.dropna(subset=["age","strontium","strontium_uncertainty"])
-    elif name.lower()=="lithium":
-        data = data.dropna(subset=["age","lithium"])
     return data
 def sortByAge(data):
     return data.sort_values("age",ascending=False).reset_index()
@@ -45,12 +41,12 @@ def getd11BswRange(d11B4,plot=False):
 ## Define any variables
 equally_spaced_ages = numpy.arange(340,269.9,-0.1)
 strontium_x = numpy.arange(0.7,0.71,1e-5)
-lithium_x = numpy.arange(-10,50,0.1)
 temperature_x = numpy.arange(-50,50,0.1)
 pH_x = numpy.arange(1,14,0.01)
 carbon_x = numpy.arange(-1e5,1e6,10)
 carbon_logx = numpy.arange(-50,50,0.01)
 d11B_x = numpy.arange(-50,100,0.1)
+saturation_state_x = numpy.arange(0,50,0.01)
 number_of_samples = 5000
 
 initial_dic_edges = [200,6000]
@@ -72,7 +68,6 @@ co2_prior = [Sampling.Distribution(carbon_x,"Flat",(30,8000)).normalise()]
 dic_prior = [Sampling.Sampler(carbon_x,"Flat",(dic_edges[0],dic_edges[1]),"Monte_Carlo").normalise()]
 
 strontium_scaling_prior = Sampling.Sampler(numpy.arange(-2,2,0.01),"Flat",(-1,1),"Monte_Carlo").normalise()
-lithium_scaling_prior = Sampling.Sampler(numpy.arange(-2,2,0.01),"Flat",(-1,1),"Monte_Carlo").normalise()
 d11Bsw_scaling_prior = Sampling.Sampler(numpy.arange(-50,50,0.01),"Flat",(-40,40),"Monte_Carlo").normalise()
 
 d11B4_jitter_samplers = [Sampling.Sampler(numpy.arange(-1,1,0.001),"Gaussian",(0,uncertainty/10),"Monte_Carlo").normalise() for uncertainty in data["d11B4_uncertainty"].to_numpy()]
