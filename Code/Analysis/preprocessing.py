@@ -8,7 +8,6 @@ def importData(name=None):
         data = pandas.read_excel("./Data/Input/Data_Compilation_SrCOB.xlsx",header=1,usecols="A,L,M,Q,V,U",names=["horizon","age","age_uncertainty","d18O","d11B4_uncertainty","d11B4"],sheet_name="Data")
     elif name.lower()=="strontium":
         data = pandas.read_excel("./Data/Input/Data_Compilation_SrCOB.xlsx",header=1,usecols="C,D,L,M",names=["strontium","strontium_uncertainty","age","age_uncertainty"],sheet_name="Data")
-        a = 5
     elif name.lower()=="calcium_magnesium":
         data = pandas.read_excel("./Data/Input/Boundary_Conditions.xlsx",header=1,usecols="A,D,G",names=["age","calcium","magnesium"],sheet_name="Seawater_Relevant")
     return data
@@ -48,7 +47,7 @@ carbon_x = numpy.arange(-1e5,1e6,10)
 carbon_logx = numpy.arange(-50,50,0.01)
 d11B_x = numpy.arange(-50,100,0.1)
 saturation_state_x = numpy.arange(0,50,0.01)
-number_of_samples = 50
+number_of_samples = 111
 
 initial_dic_edges = [200,6000]
 dic_edges = [200,20000]
@@ -60,6 +59,11 @@ epsilon = 27.2
 
 interpolation_ages = [getData("boron")["age"].to_numpy(),equally_spaced_ages]
 
+## Species calibration
+species_gradient = 0.7735
+species_intercept = 5.0936
+species_function = lambda measured: (measured-species_intercept)/species_gradient
+species_inverse_function = lambda borate: (borate*species_gradient)+species_intercept
 
 ## Define priors
 # Can reuse the same one if the prior is the same across the time series

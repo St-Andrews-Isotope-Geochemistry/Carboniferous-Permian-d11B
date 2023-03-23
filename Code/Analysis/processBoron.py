@@ -131,6 +131,7 @@ def getInitialSample():
 
         Kb_25 = [Bunch({"KB":kgen.calc_K("KB",TempC=25,Ca=calcium,Mg=magnesium)}) for calcium,magnesium in zip(calcium_gp.means,magnesium_gp.means,strict=True)]
         d11B4_interpolated = [boron_isotopes.calculate_d11B4(pH,Kb,d11Bsw,preprocessing.epsilon) for pH,d11Bsw,Kb in zip(pH_gp.means,d11Bsw_to_store,Kb_25,strict=True)]
+        d11B_measured_interpolated = [preprocessing.species_inverse_function(d11B4) for d11B4 in d11B4_interpolated]
 
         if calcium_downscaling>1:
             calcium_gp.means = [calcium/calcium_downscaling for calcium in calcium_gp.means]
@@ -151,6 +152,9 @@ def getInitialSample():
         dic = [csys["DIC"]*1e6 for csys in csys_variable_dic]
         co2_samples = [csys["pCO2"]*1e6 for csys in csys_variable_dic]
         omega = [(csys.Ca*csys.CO3)/csys.Ks.KspC for csys in csys_variable_dic]
+        calcium_to_store = [csys.Ca*1e3 for csys in csys_variable_dic]
+        co3_to_store = [csys.CO3*1e6 for csys in csys_variable_dic]
+        alkalinity_to_store = [csys.TA*1e6 for csys in csys_variable_dic]
         
         # Don't need DIC or CO2 cumulative because they're flat distributions, either 0 or equal everywhere
         #co2_cumulative_probability = sum(numpy.log(co2_probability))
@@ -166,6 +170,7 @@ def getInitialSample():
                                         .addField("d11B4_original",d11B4,precision=2)
                                         .addField("d11B4_original_probability",d11B4,precision=5)
                                         .addField("d11B4",d11B4_interpolated,precision=2)
+                                        .addField("d11Bm",d11B_measured_interpolated,precision=2)
                                         .addField("pH",pH_gp.means,precision=3)
                                         .addField("co2",co2_samples,precision=0)
                                         .addField("dic",dic,precision=0)
@@ -173,7 +178,10 @@ def getInitialSample():
                                         .addField("d11Bsw_scaling",d11Bsw_scaling,precision=3)
                                         .addField("dic_initial",initial_dic[0],precision=0)
                                         .addField("dic_fraction",dic_fraction[0],precision=3)
-                                        .addField("omega",omega,precision=2))
+                                        .addField("omega",omega,precision=2)
+                                        .addField("calcium",calcium_to_store,precision=2)
+                                        .addField("co3",co3_to_store,precision=0)
+                                        .addField("alkalinity",alkalinity_to_store,precision=0))
         return markov_chain.addSample(initial_sample)
 
 def iterate(markov_chain,number_of_samples):
@@ -289,18 +297,23 @@ def iterate(markov_chain,number_of_samples):
         dic = [csys["DIC"]*1e6 for csys in csys_variable_dic]
         co2_samples = [csys["pCO2"]*1e6 for csys in csys_variable_dic]
         omega = [(csys.Ca*csys.CO3)/csys.Ks.KspC for csys in csys_variable_dic]
+        calcium_to_store = [csys.Ca*1e3 for csys in csys_variable_dic]
+        co3_to_store = [csys.CO3*1e6 for csys in csys_variable_dic]
+        alkalinity_to_store = [csys.TA*1e6 for csys in csys_variable_dic]
                 
         pH_to_store = pH_gp.means
         co2_to_store = co2_samples
 
         Kb_25 =  [Bunch({"KB":kgen.calc_K("KB",TempC=25,Ca=calcium,Mg=magnesium)}) for calcium,magnesium in zip(calcium_gp.means,magnesium_gp.means,strict=True)]
         d11B4_interpolated = [boron_isotopes.calculate_d11B4(pH,Kb,d11Bsw,preprocessing.epsilon) for pH,d11Bsw,Kb in zip(pH_gp.means,d11Bsw_to_store,Kb_25,strict=True)]
-        
+        d11B_measured_interpolated = [preprocessing.species_inverse_function(d11B4) for d11B4 in d11B4_interpolated]
+
         current_sample = (current_sample.addField("probability",cumulative_probability,precision=5)
                                         .addField("d11Bsw",d11Bsw_to_store,precision=2)
                                         .addField("d11B4_original",d11B4,precision=2)
                                         .addField("d11B4_original_probability",d11B4,precision=5)
                                         .addField("d11B4",d11B4_interpolated,precision=2)
+                                        .addField("d11Bm",d11B_measured_interpolated,precision=2)
                                         .addField("pH",pH_to_store,precision=3)
                                         .addField("co2",co2_to_store,precision=0)
                                         .addField("dic",dic,precision=0)
@@ -308,7 +321,10 @@ def iterate(markov_chain,number_of_samples):
                                         .addField("d11Bsw_scaling",d11Bsw_scaling_jittered,precision=3)
                                         .addField("dic_initial",initial_dic[0],precision=0)
                                         .addField("dic_fraction",dic_fraction[0],precision=3)
-                                        .addField("omega",omega,precision=2))
+                                        .addField("omega",omega,precision=2)
+                                        .addField("calcium",calcium_to_store,precision=2)
+                                        .addField("co3",co3_to_store,precision=0)
+                                        .addField("alkalinity",alkalinity_to_store,precision=0))
         
         markov_chain = markov_chain.addSample(current_sample)
         print(len(markov_chain))
