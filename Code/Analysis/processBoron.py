@@ -10,19 +10,21 @@ import kgen
 from processStrontium import makeStrontiumGP,generateNormalisedStrontium
 import preprocessing,processCalciumMagnesium
 
+numpy.seterr(all="ignore")
+
 strontium_gp = makeStrontiumGP()
 normalised_strontium_gp = generateNormalisedStrontium()
 
 strontium_shapes = normalised_strontium_gp.means
 
-d11Bsw_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,0.5),"Monte_Carlo").normalise()  
-d11Bsw_initial_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,1),"Monte_Carlo").normalise()
+d11Bsw_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,1),"Monte_Carlo").normalise()  
+d11Bsw_initial_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,2),"Monte_Carlo").normalise()
 
 d18O = preprocessing.data["d18O"].to_numpy()
 temperature = 15.7 - 4.36*((d18O-(-1))) + 0.12*((d18O-(-1))**2)
 temperature_constraints = [Sampling.Distribution(preprocessing.temperature_x,"Gaussian",(temperature,0.1),location=location).normalise() for temperature,location in zip(temperature,preprocessing.data["age"].to_numpy(),strict=True)]
 temperature_gp,temperature_mean_gp = GaussianProcess().constrain(temperature_constraints).removeLocalMean(fraction=(10,2))
-temperature_gp = temperature_gp.setKernel("rbf",(1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(temperature_mean_gp)
+temperature_gp = temperature_gp.setKernel("rbf",(5,10),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(temperature_mean_gp)
 
 calcium_gp,magnesium_gp = processCalciumMagnesium.calculateCalciumMagnesium()
 
@@ -38,6 +40,10 @@ dic_prior = preprocessing.dic_prior
 scaling_edges = numpy.arange(-1,1e3,0.1)
 calcium_upscaling_prior = Sampling.Distribution(scaling_edges,"Flat",(0,3))
 calcium_downscaling_prior = Sampling.Distribution(scaling_edges,"Flat",(0,3))
+
+pH_uncertainties = numpy.loadtxt("./Data/Output/pH_uncertainties.csv")
+
+a = 5
 
 # Hoist out of start loop
 def iterated11B4():
@@ -58,6 +64,7 @@ def iterated11B4():
 
 def getInitialSample():
     print("Getting initial sample")
+    
     markov_chain = Sampling.MarkovChain()
     initial_sample = Sampling.MarkovChainSample()
     while True:
@@ -82,12 +89,14 @@ def getInitialSample():
 
         if any(d11Bsw_probability==0) or d11Bsw_scaling_probability==0 or d11Bsw_initial_probability==0:
             continue
+    
         Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws,d11B4,preprocessing.epsilon)
-        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.05),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
-        
+        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,pH_uncertainty),location=location).normalise() for pH_value,location,pH_uncertainty in zip(pH_values,preprocessing.data["age"].values,pH_uncertainties,strict=True)]
+
+
         pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+        pH_gp = pH_gp.setKernel("rbf",(0.5,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         pH = pH_gp.means[0]
 
         if numpy.any(numpy.isnan(pH)):
@@ -140,10 +149,10 @@ def getInitialSample():
         
         Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws,d11B4,preprocessing.epsilon)
-        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.05),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
-        
+        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,pH_uncertainty),location=location).normalise() for pH_value,location,pH_uncertainty in zip(pH_values,preprocessing.data["age"].values,pH_uncertainties,strict=True)]
+
         pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+        pH_gp = pH_gp.setKernel("rbf",(0.5,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         pH_log_probability = numpy.array([pH_prior[0].getLogProbability(pH) for pH in pH[0]])
         pH_cumulative_probability = sum(pH_log_probability)
 
@@ -209,10 +218,10 @@ def iterate(markov_chain,number_of_samples):
 
         Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws,d11B4,preprocessing.epsilon)
-        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.05),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
-        
+        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,pH_uncertainty),location=location).normalise() for pH_value,location,pH_uncertainty in zip(pH_values,preprocessing.data["age"].values,pH_uncertainties,strict=True)]
+
         pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+        pH_gp = pH_gp.setKernel("rbf",(0.5,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         pH = pH_gp.means[0]
 
         if numpy.any(numpy.isnan(pH)):
@@ -230,7 +239,6 @@ def iterate(markov_chain,number_of_samples):
         dic_sensible = initial_dic_probability>0 and dic_fraction_probability>0
         if not dic_sensible:
             continue
-
         csys_constant_dic = [Csys(pHtot=pH,DIC=initial_dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=calcium,Mg=magnesium,unit="mol") for pH,temperature,calcium,magnesium in zip(pH_gp.means,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
         relative_co2 = [(csys["CO2"][0]/csys_constant_dic[0]["CO2"][0][0])-1 for csys in csys_constant_dic]
         
@@ -239,8 +247,9 @@ def iterate(markov_chain,number_of_samples):
         
         if not dic_sensible:
             continue
+
         csys_variable_dic = [Csys(pHtot=pH,DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=calcium,Mg=magnesium,unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.means,dic_series,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
-        
+
         dic = [csys["DIC"]*1e6 for csys in csys_variable_dic]
         co2_samples = [csys["pCO2"]*1e6 for csys in csys_variable_dic]
 
@@ -285,10 +294,10 @@ def iterate(markov_chain,number_of_samples):
                 
         Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws,d11B4,preprocessing.epsilon)
-        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,0.05),location=location).normalise() for pH_value,location in zip(pH_values,preprocessing.data["age"].to_numpy(),strict=True)]
-        
+        pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,pH_uncertainty),location=location).normalise() for pH_value,location,pH_uncertainty in zip(pH_values,preprocessing.data["age"].values,pH_uncertainties,strict=True)]
+
         pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+        pH_gp = pH_gp.setKernel("rbf",(0.5,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         pH_log_probability = numpy.array([pH_prior[0].getLogProbability(pH) for pH in pH[0]])
         pH_cumulative_probability = sum(pH_log_probability)
 

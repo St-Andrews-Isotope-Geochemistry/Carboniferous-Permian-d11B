@@ -37,10 +37,10 @@ calcium_gp,magnesium_gp = processCalciumMagnesium.calculateCalciumMagnesium()
 strontium_gp = makeStrontiumGP()
 
 Kb = Bunch({"KB":kgen.calc_K("KB",TempC=temperature,Ca=calcium_gp.means[0][0],Mg=magnesium_gp.means[0][0])})
-pH_values = boron_isotopes.calculate_pH(Kb,30,preprocessing.data["d11B4"].to_numpy(),preprocessing.epsilon)
+pH_values = boron_isotopes.calculate_pH(Kb,20,preprocessing.data["d11B4"].to_numpy(),preprocessing.epsilon)
 
 Kb_25 = Bunch({"KB":kgen.calc_K("KB",TempC=25,Ca=calcium_gp.means[0][0],Mg=magnesium_gp.means[0][0])})
-d11B4_at_25 = boron_isotopes.calculate_d11B4(pH_values,Kb_25,30,preprocessing.epsilon)
+d11B4_at_25 = boron_isotopes.calculate_d11B4(pH_values,Kb_25,20,preprocessing.epsilon)
 
 
 figure_1,axes_1 = pyplot.subplots(nrows=7,sharex=True,figsize=(6,8))
