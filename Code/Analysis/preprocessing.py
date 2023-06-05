@@ -9,7 +9,7 @@ def importData(name=None):
     elif name.lower()=="strontium":
         data = pandas.read_excel("./Data/Input/Data_Compilation_SrCOB.xlsx",header=1,usecols="C,D,L,M",names=["strontium","strontium_uncertainty","age","age_uncertainty"],sheet_name="Data")
     elif name.lower()=="calcium_magnesium":
-        data = pandas.read_excel("./Data/Input/Boundary_Conditions.xlsx",header=1,usecols="A,D,G",names=["age","calcium","magnesium"],sheet_name="Seawater_Relevant")
+        data = pandas.read_excel("./Data/Input/Boundary_Conditions.xlsx",header=1,usecols="A,D,E,F,G,H,I",names=["age","calcium","calcium_low","calcium_high","magnesium","magnesium_low","magnesium_high"],sheet_name="Seawater_Relevant")
     return data
 def recombineData(data,name):
     if name.lower()=="boron":
@@ -35,10 +35,10 @@ def getData(name=None):
     data = refineData(data,name)
     data = sortByAge(data)
     return data
-def getd11BswRange(d11B4,plot=False):
+def getd11BswRange(d11B4,epsilon,plot=False):
     from cbsyst import boron_isotopes
 
-    d11Bsw_range = boron_isotopes.calculate_d11BT_range(d11B4)
+    d11Bsw_range = boron_isotopes.calculate_d11BT_range(d11B4,epsilonB=epsilon)
     return d11Bsw_range
 
 ## Define any variables
@@ -51,7 +51,8 @@ carbon_x = numpy.arange(-1e5,1e6,10)
 carbon_logx = numpy.arange(-50,50,0.01)
 d11B_x = numpy.arange(-50,100,0.1)
 saturation_state_x = numpy.arange(0,1000,0.01)
-number_of_samples = 555
+epsilon_x = numpy.arange(10,50,0.01)
+number_of_samples = 11111
 
 initial_dic_edges = [200,6000]
 dic_edges = [200,50000]
@@ -59,7 +60,11 @@ dic_edges = [200,50000]
 
 # Load the data
 data = getData("boron")
-epsilon = 27.2
+# epsilon = 27.2
+epsilon_distribution_1 = Sampling.Distribution(epsilon_x,"Gaussian",(27.2,0.3)).normalise()
+epsilon_distribution_2 = Sampling.Distribution(epsilon_x,"Gaussian",(26.0,0.5)).normalise()
+epsilon_sampler = Sampling.Sampler(epsilon_x,"Manual",epsilon_distribution_1.probabilities+epsilon_distribution_2.probabilities,"Monte_Carlo").normalise()
+epsilon_jitter_sampler = Sampling.Sampler(numpy.arange(-2,2,0.001),"Gaussian",(0,0.01),"Monte_Carlo").normalise()
 
 interpolation_ages = [getData("boron")["age"].to_numpy(),equally_spaced_ages]
 
@@ -71,18 +76,25 @@ species_inverse_function = lambda borate: (borate*species_gradient)+species_inte
 
 ## Define priors
 # Can reuse the same one if the prior is the same across the time series
-d11B4_priors = [Sampling.Sampler(d11B_x,"Gaussian",(d11B4,d11B4_uncertainty),"Monte_Carlo",location=age).normalise() for age,d11B4,d11B4_uncertainty in zip(data["age"].to_numpy(),data["d11B4"].to_numpy(),data["d11B4_uncertainty"].to_numpy(),strict=True)]
+# Uncertainty for d11B4 is at 2std, so half it
+d11B4_priors = [Sampling.Sampler(d11B_x,"Gaussian",(d11B4,d11B4_uncertainty/2),"Monte_Carlo",location=age).normalise() for age,d11B4,d11B4_uncertainty in zip(data["age"].values,data["d11B4"].values,data["d11B4_uncertainty"].values,strict=True)]
 pH_prior = [Sampling.Distribution(pH_x,"Gaussian",(8,1)).normalise()]
 co2_prior = [Sampling.Distribution(carbon_x,"Flat",(50,8000)).normalise()]
 dic_prior = [Sampling.Sampler(carbon_x,"Flat",(dic_edges[0],dic_edges[1]),"Monte_Carlo").normalise()]
 
-strontium_scaling_prior = Sampling.Sampler(numpy.arange(-2,2,0.01),"Flat",(-1,1),"Monte_Carlo").normalise()
+# strontium_scaling_prior = Sampling.Sampler(numpy.arange(-2,2,0.01),"Flat",(-1,1),"Monte_Carlo").normalise()
 d11Bsw_scaling_prior = Sampling.Sampler(numpy.arange(-50,50,0.01),"Flat",(-40,40),"Monte_Carlo").normalise()
+d11Bsw_scaling_initial = Sampling.Sampler(numpy.arange(-50,50,0.01),"Flat",(12.55-2,12.55+2),"Monte_Carlo").normalise()
+d11Bsw_initial_initial = Sampling.Sampler(numpy.arange(-50,50,0.01),"Flat",(37.0-8,37.0+8),"Monte_Carlo").normalise()
 
-d11B4_jitter_samplers = [Sampling.Sampler(numpy.arange(-1,1,0.01),"Gaussian",(0,uncertainty/20),"Monte_Carlo").normalise() for uncertainty in data["d11B4_uncertainty"].to_numpy()]
+d11Bsw_scaling_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,0.1),"Monte_Carlo").normalise()  
+d11Bsw_initial_jitter_sampler = Sampling.Sampler(numpy.arange(-10,10,1e-3),"Gaussian",(0,0.1),"Monte_Carlo").normalise()
+
+d11B4_jitter_samplers = [Sampling.Sampler(numpy.arange(-1,1,0.01),"Gaussian",(0,uncertainty/20),"Monte_Carlo").normalise() for uncertainty in data["d11B4_uncertainty"].values]
+pH_seed_jitter = [numpy.array([0.1]*len(group)) for group in interpolation_ages]
 
 initial_dic_sampler = [Sampling.Sampler(carbon_x,"Flat",(initial_dic_edges[0],initial_dic_edges[1]),"Monte_Carlo").normalise()]
-initial_dic_jitter_sampler = [Sampling.Sampler(numpy.arange(-1e4,1e4,10),"Gaussian",(0,100),"Monte_Carlo").normalise()]
+initial_dic_jitter_sampler = [Sampling.Sampler(numpy.arange(-1e4,1e4,10),"Gaussian",(0,50),"Monte_Carlo").normalise()]
 
 dic_fraction_sampler = [Sampling.Sampler(numpy.arange(-5,5,0.01),"Flat",(-1,2),"Monte_Carlo").normalise()]
 dic_fraction_jitter_sampler = [Sampling.Sampler(numpy.arange(-5,5,1e-3),"Gaussian",(0,0.05),"Monte_Carlo").normalise()]
