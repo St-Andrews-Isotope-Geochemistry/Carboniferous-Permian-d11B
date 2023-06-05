@@ -24,10 +24,10 @@ for d18O_constraint,d11B4_prior in zip(d18O_constraints,preprocessing.d11B4_prio
 
     # A nominal d11Bsw
     Ks = Bunch(kgen.calc_Ks(TempC=numpy.mean(temperature)))
-    d11Bsw = boron_isotopes.calculate_d11BT(8,Ks,d11B4_prior.values[0],preprocessing.epsilon)
+    d11Bsw = boron_isotopes.calculate_d11BT(8,Ks,d11B4_prior.values[0],27.2)
 
     Ks = Bunch(kgen.calc_Ks(TempC=temperature,Sal=35,Pres=0))
-    pH = boron_isotopes.calculate_pH(Ks,d11Bsw,d11B4_prior.samples,preprocessing.epsilon)
+    pH = boron_isotopes.calculate_pH(Ks,d11Bsw,d11B4_prior.samples,27.2)
 
     pH_uncertainties += [numpy.nanstd(pH)]
 
