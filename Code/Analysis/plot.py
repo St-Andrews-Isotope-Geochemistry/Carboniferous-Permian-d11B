@@ -8,7 +8,7 @@ from cbsyst import boron_isotopes,Csys
 from cbsyst.helpers import Bunch
 import kgen
 
-markov_chain = Sampling.MarkovChain().fromJSON("./Data/Output/markov_chain.json")
+markov_chain = Sampling.MarkovChain().fromJSON("./Data/Output/markov_chain.json").burn(10)
 
 # d11B4_gp = GaussianProcess().setQueryLocations([preprocessing.interpolation_ages[0]],preprocessing.d11B_x)
 d11B4_25_gp = GaussianProcess().setQueryLocations(preprocessing.interpolation_ages,preprocessing.d11B_x)
@@ -37,10 +37,10 @@ calcium_gp,magnesium_gp = processCalciumMagnesium.calculateCalciumMagnesium()
 strontium_gp = makeStrontiumGP()
 
 Kb = Bunch({"KB":kgen.calc_K("KB",TempC=temperature,Ca=calcium_gp.means[0][0],Mg=magnesium_gp.means[0][0])})
-pH_values = boron_isotopes.calculate_pH(Kb,20,preprocessing.data["d11B4"].to_numpy(),preprocessing.epsilon)
+pH_values = boron_isotopes.calculate_pH(Kb,20,preprocessing.data["d11B4"].to_numpy(),27.2)
 
 Kb_25 = Bunch({"KB":kgen.calc_K("KB",TempC=25,Ca=calcium_gp.means[0][0],Mg=magnesium_gp.means[0][0])})
-d11B4_at_25 = boron_isotopes.calculate_d11B4(pH_values,Kb_25,20,preprocessing.epsilon)
+d11B4_at_25 = boron_isotopes.calculate_d11B4(pH_values,Kb_25,20,27.2)
 
 
 figure_1,axes_1 = pyplot.subplots(nrows=7,sharex=True,figsize=(6,8))
@@ -50,7 +50,7 @@ axes_1[0].scatter(preprocessing.interpolation_ages[0],preprocessing.data["d11B4"
 d11B4_25_gp.plotMean(axis=axes_1[0],group=1,color="grey",zorder=2)
 d11B4_25_gp.plotArea(axis=axes_1[0],group=1,color="blue",alpha=0.5,zorder=1,set_axes=False)
 
-axes_1[0].set_ylim((5,20))
+axes_1[0].set_ylim((0,25))
 axes_1[0].set_ylabel("$\delta^{11}B_{4}$")
 
 from matplotlib.patches import Polygon,Rectangle
@@ -80,7 +80,7 @@ for x_index in range(len(x)-1):
 
 
 axes_1[3].set_ylabel("pH")
-axes_1[3].set_ylim((7.0,9.0))
+axes_1[3].set_ylim((7.6,9.0))
 
 
 ## DIC
@@ -94,7 +94,7 @@ axes_1[4].set_ylim((0,10000))
 saturation_state_gp.plotArea(axis=axes_1[5],group=1,color="#1dab4c",alpha=0.3)
 saturation_state_gp.plotMedian(axis=axes_1[5],group=1,color="#1dab4c",zorder=2)
 
-axes_1[5].set_ylabel("Saturation state")
+axes_1[5].set_ylabel("Saturation\n state")
 axes_1[5].set_ylim((0,20))
 
 co2_data = pandas.read_excel("./Data/Input/CO2.xlsx",usecols="A:B",names=["age","co2"],header=0,sheet_name="Matlab")

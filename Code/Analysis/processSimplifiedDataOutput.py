@@ -1,4 +1,4 @@
-import pandas,numpy
+import pandas,numpy,openpyxl
 
 from geochemistry_helpers import Sampling,GaussianProcess
 import preprocessing
