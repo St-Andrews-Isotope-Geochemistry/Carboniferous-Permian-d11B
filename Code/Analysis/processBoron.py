@@ -17,10 +17,10 @@ normalised_strontium_gp = generateNormalisedStrontium()
 
 strontium_shapes = normalised_strontium_gp.means
 
-d18O = preprocessing.data["d18O"].to_numpy()
+d18O = preprocessing.data["d18O"].values
 temperature = 15.7 - 4.36*((d18O-(-1))) + 0.12*((d18O-(-1))**2)
-temperature_constraints = [Sampling.Distribution(preprocessing.temperature_x,"Gaussian",(temperature,0.1),location=location).normalise() for temperature,location in zip(temperature,preprocessing.data["age"].to_numpy(),strict=True)]
-temperature_gp,temperature_mean_gp = GaussianProcess().constrain(temperature_constraints).removeLocalMean(fraction=(10,2))
+temperature_constraints = [Sampling.Distribution(preprocessing.temperature_x,"Gaussian",(temperature,1.0),location=location).normalise() for temperature,location in zip(temperature,preprocessing.data["age"].values,strict=True)]
+temperature_gp,temperature_mean_gp = GaussianProcess().constrain(constraints=temperature_constraints).removeLocalMean(fraction=(1,1))
 temperature_gp = temperature_gp.setKernel("rbf",(5,10),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(temperature_mean_gp)
 
 calcium_gp,magnesium_gp = processCalciumMagnesium.calculateCalciumMagnesium()
@@ -68,6 +68,7 @@ def getInitialSample():
     while True:
         # Draw samples of d11B4 and epsilon
         d11B4 = numpy.array([d11B4_prior.getSamples(1).samples[0] for d11B4_prior in preprocessing.d11B4_priors])
+        # d11B4[11] = 11.0
         epsilon = preprocessing.epsilon_sampler.getSamples(1).samples[0]
         # d11B4_likelihood = numpy.sum([d11B4_prior.getLogProbability(d11B4_sample) for d11B4_prior,d11B4_sample in zip(preprocessing.d11B4_priors,d11B4,strict=True)])
 
@@ -92,7 +93,7 @@ def getInitialSample():
         #     continue
         
         # Calculate d11Bsw - interpolated
-        d11Bsws = [d11Bsw_initial+(d11Bsw_scaling/2)*numpy.squeeze(shape) for shape in strontium_shapes]
+        d11Bsws = [d11Bsw_initial+(d11Bsw_scaling*numpy.squeeze(shape)) for shape in strontium_shapes]
 
         # Calculate probability where we have datapoints
         d11Bsw_probability = numpy.squeeze(numpy.array([d11Bsw_prior.getProbability([d11Bsw]) for d11Bsw_prior,d11Bsw in zip(d11Bsw_priors,d11Bsws[0],strict=True)]))
@@ -103,7 +104,7 @@ def getInitialSample():
             continue
     
         # Now that we have a valid d11Bsw - calculate pH (which needs Kb)
-        Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+        Kb = [Bunch({"KB":kgen.calc_K("KB",temp_c=temperature[0],calcium=calcium,magnesium=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws[0],d11B4,epsilon)
 
         # Create constraints from the pH values using precalculated pH uncertainty
@@ -111,27 +112,41 @@ def getInitialSample():
 
         # Put the constraints into a two stage Gaussian process (removing very long term fluctuations and prescribed smoothness for remainder)
         pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-        pH_gp = pH_gp.setKernel("rbf",(0.1,3),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         
         # Generate a seed and use it to draw samples
         pH_seed = pH_gp.generateSeed()
         pH_gp.getSamples(1,seed=pH_seed)
 
         # Ensure none of the predictions for pH are NaN
+        skip = False
         for pH_sample in pH_gp.samples:
-            if numpy.any(pH_sample):
+            if numpy.any(numpy.isnan(pH_sample)):
+                skip = True
                 continue
-        
+        if skip:
+            continue
+
         # Given we now have a valid pH evolution, draw samples for starting point and scaling of DIC
         initial_dic = preprocessing.initial_dic_sampler[0].getSamples(1).samples
         dic_fraction = preprocessing.dic_fraction_sampler[0].getSamples(1).samples
 
         # Calculate what would happen at a constant DIC, and how much CO2 would change relative to the first datapoint
-        csys_constant_dic = [Csys(pHtot=numpy.squeeze(pH),DIC=initial_dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=numpy.squeeze(calcium),Mg=numpy.squeeze(magnesium),unit="mol") for pH,temperature,calcium,magnesium in zip(pH_gp.means,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
-        relative_co2 = [(csys["CO2"]/csys_constant_dic[0]["CO2"][0])-1 for csys in csys_constant_dic]
+        # csys_constant_dic = [Csys(pHtot=numpy.squeeze(pH),DIC=initial_dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),calcium=numpy.squeeze(calcium),magnesium=numpy.squeeze(magnesium),unit="mol") for pH,temperature,calcium,magnesium in zip(pH_gp.means,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+        # relative_co2 = [(csys["CO2"]/csys_constant_dic[0]["CO2"][0])-1 for csys in csys_constant_dic]
+
+        # Calculate DIC required to have constant CO2 equal to the first datapoint
+        csys_reference = Csys(pHtot=pH_gp.samples[0][0][0],DIC=initial_dic/1e6,T_in=temperature_gp.means[0][0][0],T_out=temperature_gp.means[0][0][0],Ca=calcium_gp.means[0][0][0],Mg=magnesium_gp.means[0][0][0],unit="mol")
+        co2_reference = csys_reference["CO2"]
+
+        csys_constant_co2 = [Csys(pHtot=numpy.squeeze(pH),CO2=co2_reference,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=numpy.squeeze(calcium),Mg=numpy.squeeze(magnesium),unit="mol") for pH,temperature,calcium,magnesium in zip(pH_gp.samples,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+        dic_required = [csys["DIC"]*1e6 for csys in csys_constant_co2]
+        dic_delta = [(dic-initial_dic)*dic_fraction for dic in dic_required]
+        dic_series = [delta+initial_dic for delta in dic_delta]
+
         
         # Convert the relative CO2 to absolute DIC
-        dic_series = [initial_dic+relative*dic_fraction*initial_dic for relative in relative_co2]
+        # dic_series = [initial_dic+relative*dic_fraction*initial_dic for relative in relative_co2]
         # Print out for diagnostics
         print("DIC: "+str(numpy.min(dic_series[-1])) +","+ str(initial_dic[0]) +","+ str(numpy.max(dic_series[-1]))+","+str(dic_fraction[0]))
 
@@ -145,7 +160,7 @@ def getInitialSample():
             continue
 
         # Now we have valid pH and DIC evolutions, quantify the carbonate system
-        csys_variable_dic = [Csys(pHtot=numpy.squeeze(pH),DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=numpy.squeeze(calcium),Mg=numpy.squeeze(magnesium),unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.means,dic_series,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+        csys_variable_dic = [Csys(pHtot=numpy.squeeze(pH),DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=numpy.squeeze(calcium),Mg=numpy.squeeze(magnesium),unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.samples,dic_series,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
         
         # Calculate saturation state
         omega = (csys_variable_dic[-1].Ca*csys_variable_dic[-1].CO3)/csys_variable_dic[-1].Ks.KspC
@@ -164,7 +179,7 @@ def getInitialSample():
         dic = [csys["DIC"]*1e6 for csys in csys_variable_dic]
         co2 = [csys["pCO2"]*1e6 for csys in csys_variable_dic]
 
-        pH_distribution = Sampling.Distribution.fromSamples(pH[0],bin_edges=preprocessing.pH_x).normalise()
+        # pH_distribution = Sampling.Distribution.fromSamples(pH[0],bin_edges=preprocessing.pH_x).normalise()
         
         # Get the probability of each of the parameters
         epsilon_probability = preprocessing.epsilon_sampler.getProbability([epsilon])
@@ -183,28 +198,30 @@ def getInitialSample():
             calcium_adjusted = [calcium/calcium_downscaling for calcium in calcium_gp.means]
         if calcium_upscaling>1:
             calcium_adjusted = [calcium*calcium_upscaling for calcium in calcium_gp.means]
+        else:
+            calcium_adjusted = calcium_gp.means
 
         # Also processing at temperature=25 degrees to eliminate site specific temperature effect
-        Kb_25 = [Bunch({"KB":kgen.calc_K("KB",TempC=25,Ca=calcium,Mg=magnesium)}) for calcium,magnesium in zip(calcium_adjusted,magnesium_gp.means,strict=True)]
+        Kb_25 = [Bunch({"KB":kgen.calc_K("KB",temp_c=25,calcium=calcium,magnesium=magnesium)}) for calcium,magnesium in zip(calcium_adjusted,magnesium_gp.means,strict=True)]
         # Then convert the interpolated pH to interpolated d11B4
-        d11B4_interpolated = [boron_isotopes.calculate_d11B4(pH,Kb,d11Bsw,epsilon) for pH,d11Bsw,Kb in zip(pH_gp.means,d11Bsws,Kb_25,strict=True)]
+        d11B4_interpolated = [boron_isotopes.calculate_d11B4(pH,Kb,d11Bsw,epsilon) for pH,d11Bsw,Kb in zip(pH_gp.samples,d11Bsws,Kb_25,strict=True)]
         # And d11B4 into what would hypothetically have been measured
         d11B_measured_interpolated = [preprocessing.species_inverse_function(d11B4) for d11B4 in d11B4_interpolated]
         
         # Recalculate pH constraints with new calcium
-        Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_adjusted,magnesium_gp.means,strict=True)]
+        Kb = [Bunch({"KB":kgen.calc_K("KB",temp_c=temperature[0],calcium=calcium,magnesium=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_adjusted,magnesium_gp.means,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws[0],d11B4,epsilon)
         pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,pH_uncertainty),location=location).normalise() for pH_value,location,pH_uncertainty in zip(pH_values,preprocessing.data["age"].values,pH_uncertainties,strict=True)]
 
         # Redo the full GP for interpolated ages
         pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-        pH_gp = pH_gp.setKernel("rbf",(0.1,3),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         
         # Use the same seed to draw samples
         pH_gp.getSamples(1,seed=pH_seed)
 
         # Redo carbonate chemistry calculations
-        csys_variable_dic = [Csys(pHtot=pH,DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=calcium,Mg=magnesium,unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.means,dic_series,temperature_gp.means,calcium_adjusted,magnesium_gp.means,strict=True)]
+        csys_variable_dic = [Csys(pHtot=pH,DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=calcium,Mg=magnesium,unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.samples,dic_series,temperature_gp.means,calcium_adjusted,magnesium_gp.means,strict=True)]
     
         # Pull out variables in typical units
         pH_to_store = pH_gp.samples
@@ -281,7 +298,7 @@ def iterate(markov_chain,number_of_samples):
             continue
 
         # Calculate d11Bsw - interpolated
-        d11Bsws = [d11Bsw_initial_jittered+(d11Bsw_scaling_jittered/2)*numpy.squeeze(shape) for shape in strontium_shapes]
+        d11Bsws = [d11Bsw_initial_jittered+(d11Bsw_scaling_jittered*numpy.squeeze(shape)) for shape in strontium_shapes]
 
         # Calculate probability where we have datapoints
         d11Bsw_probability = numpy.squeeze(numpy.array([d11Bsw_prior.getProbability([d11Bsw]) for d11Bsw_prior,d11Bsw in zip(d11Bsw_priors,d11Bsws[0],strict=True)]))
@@ -296,7 +313,7 @@ def iterate(markov_chain,number_of_samples):
         magnesium_estimate = [magnesium/1e3 for magnesium in markov_chain.final("magnesium")]
 
         # Now that we have a valid d11Bsw - calculate pH (which needs Kb)
-        Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_estimate,magnesium_estimate,strict=True)]
+        Kb = [Bunch({"KB":kgen.calc_K("KB",temp_c=temperature[0],calcium=calcium,magnesium=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_estimate,magnesium_estimate,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws[0],d11B4,epsilon)
 
         # Create constraints from the pH values using precalculated pH uncertainty
@@ -304,16 +321,20 @@ def iterate(markov_chain,number_of_samples):
 
         # Put the constraints into a two stage Gaussian process (removing very long term fluctuations and prescribed smoothness for remainder)
         pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-        pH_gp = pH_gp.setKernel("rbf",(0.1,3),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         
         # Generate a seed and use it to draw samples
         pH_seed = pH_gp.perturbSeed(markov_chain.final("pH_seed"),preprocessing.pH_seed_jitter)
         pH_gp.getSamples(1,seed=pH_seed)
         
         # Ensure none of the predictions for pH are NaN
+        skip = False
         for pH_sample in pH_gp.samples:
-            if numpy.any(pH_sample):
+            if numpy.any(numpy.isnan(pH_sample)):
+                skip = True
                 continue
+        if skip:
+            continue
 
         # Take samples for initial DIC and DIC scaling jitter
         initial_dic_jitter = preprocessing.initial_dic_jitter_sampler[0].getSamples(1).samples
@@ -332,11 +353,17 @@ def iterate(markov_chain,number_of_samples):
             continue
 
         # Calculate what would happen at a constant DIC, and how much CO2 would change relative to the first datapoint
-        csys_constant_dic = [Csys(pHtot=numpy.squeeze(pH),DIC=initial_dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=numpy.squeeze(calcium),Mg=numpy.squeeze(magnesium),unit="mol") for pH,temperature,calcium,magnesium in zip(pH_gp.means,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
-        relative_co2 = [(csys["CO2"]/csys_constant_dic[0]["CO2"][0])-1 for csys in csys_constant_dic]
-         
-        # Convert the relative CO2 to absolute DIC
-        dic_series = [initial_dic+relative*dic_fraction*initial_dic for relative in relative_co2]
+        # csys_constant_dic = [Csys(pHtot=numpy.squeeze(pH),DIC=initial_dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),calcium=numpy.squeeze(calcium),magnesium=numpy.squeeze(magnesium),unit="mol") for pH,temperature,calcium,magnesium in zip(pH_gp.samples,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+        # relative_co2 = [(csys["CO2"]/csys_constant_dic[0]["CO2"][0])-1 for csys in csys_constant_dic]
+
+        # Calculate DIC required to have constant CO2 equal to the first datapoint
+        csys_reference = Csys(pHtot=pH_gp.samples[0][0][0],DIC=initial_dic/1e6,T_in=temperature_gp.means[0][0][0],T_out=temperature_gp.means[0][0][0],Ca=calcium_gp.means[0][0][0],Mg=magnesium_gp.means[0][0][0],unit="mol")
+        co2_reference = csys_reference["CO2"]
+
+        csys_constant_co2 = [Csys(pHtot=numpy.squeeze(pH),CO2=co2_reference,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=numpy.squeeze(calcium),Mg=numpy.squeeze(magnesium),unit="mol") for pH,temperature,calcium,magnesium in zip(pH_gp.samples,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+        dic_required = [csys["DIC"]*1e6 for csys in csys_constant_co2]
+        dic_delta = [(dic-initial_dic)*dic_fraction for dic in dic_required]
+        dic_series = [delta+initial_dic for delta in dic_delta]
 
         skip = False
         for dic_evolution in dic_series:
@@ -347,7 +374,7 @@ def iterate(markov_chain,number_of_samples):
             continue
             
         # Now we have valid pH and DIC evolutions, quantify the carbonate system
-        csys_variable_dic = [Csys(pHtot=numpy.squeeze(pH),DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=numpy.squeeze(calcium),Mg=numpy.squeeze(magnesium),unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.means,dic_series,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
+        csys_variable_dic = [Csys(pHtot=numpy.squeeze(pH),DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=numpy.squeeze(calcium),Mg=numpy.squeeze(magnesium),unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.samples,dic_series,temperature_gp.means,calcium_gp.means,magnesium_gp.means,strict=True)]
 
         # Calculate saturation state - using original calcium as this is for down/upscaling
         omega = (calcium_gp.means[-1]*csys_variable_dic[-1].CO3)/csys_variable_dic[-1].Ks.KspC
@@ -385,28 +412,30 @@ def iterate(markov_chain,number_of_samples):
             calcium_adjusted = [calcium/calcium_downscaling for calcium in calcium_gp.means]
         if calcium_upscaling>1:
             calcium_adjusted = [calcium*calcium_upscaling for calcium in calcium_gp.means]
+        else:
+            calcium_adjusted = calcium_gp.means
          
         # Also processing at temperature=25 degrees to eliminate site specific temperature effect
-        Kb_25 =  [Bunch({"KB":kgen.calc_K("KB",TempC=25,Ca=calcium,Mg=magnesium)}) for calcium,magnesium in zip(calcium_adjusted,magnesium_gp.means,strict=True)]
+        Kb_25 =  [Bunch({"KB":kgen.calc_K("KB",temp_c=25,calcium=calcium,magnesium=magnesium)}) for calcium,magnesium in zip(calcium_adjusted,magnesium_gp.means,strict=True)]
         # Then convert the interpolated pH to interpolated d11B4
-        d11B4_interpolated = [boron_isotopes.calculate_d11B4(pH,Kb,d11Bsw,epsilon) for pH,d11Bsw,Kb in zip(pH_gp.means,d11Bsws,Kb_25,strict=True)]
+        d11B4_interpolated = [boron_isotopes.calculate_d11B4(pH,Kb,d11Bsw,epsilon) for pH,d11Bsw,Kb in zip(pH_gp.samples,d11Bsws,Kb_25,strict=True)]
         # And d11B4 into what would hypothetically have been measured
         d11B_measured_interpolated = [preprocessing.species_inverse_function(d11B4) for d11B4 in d11B4_interpolated]
 
         # Recalculate pH constraints with new calcium
-        Kb = [Bunch({"KB":kgen.calc_K("KB",TempC=temperature[0],Ca=calcium,Mg=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_adjusted,magnesium_gp.means,strict=True)]
+        Kb = [Bunch({"KB":kgen.calc_K("KB",temp_c=temperature[0],calcium=calcium,magnesium=magnesium)}) for temperature,calcium,magnesium in zip(temperature_gp.means,calcium_adjusted,magnesium_gp.means,strict=True)]
         pH_values = boron_isotopes.calculate_pH(Kb[0],d11Bsws[0],d11B4,epsilon)
         pH_constraints = [Sampling.Distribution(preprocessing.pH_x,"Gaussian",(pH_value,pH_uncertainty),location=location).normalise() for pH_value,location,pH_uncertainty in zip(pH_values,preprocessing.data["age"].values,pH_uncertainties,strict=True)]
 
         # Redo the full GP for interpolated ages
         pH_gp,pH_mean_gp = GaussianProcess().constrain(pH_constraints).removeLocalMean(fraction=(2,2))
-        pH_gp = pH_gp.setKernel("rbf",(0.1,3),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
+        pH_gp = pH_gp.setKernel("rbf",(0.1,5),specified_mean=0).query(preprocessing.interpolation_ages).addLocalMean(pH_mean_gp)
         
         # Use the same seed to draw samples
         pH_gp.getSamples(1,seed=pH_seed)
 
         # Redo carbonate chemistry calculations
-        csys_variable_dic = [Csys(pHtot=pH,DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=calcium,Mg=magnesium,unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.means,dic_series,temperature_gp.means,calcium_adjusted,magnesium_gp.means,strict=True)]
+        csys_variable_dic = [Csys(pHtot=pH,DIC=dic/1e6,T_in=numpy.squeeze(temperature),T_out=numpy.squeeze(temperature),Ca=calcium,Mg=magnesium,unit="mol") for pH,dic,temperature,calcium,magnesium in zip(pH_gp.samples,dic_series,temperature_gp.means,calcium_adjusted,magnesium_gp.means,strict=True)]
     
         # Pull out variables in typical units
         pH_to_store = pH_gp.samples

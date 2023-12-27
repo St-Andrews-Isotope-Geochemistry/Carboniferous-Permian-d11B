@@ -1,12 +1,19 @@
 import pandas,numpy,openpyxl
 
 from geochemistry_helpers import Sampling,GaussianProcess
+from processStrontium import makeStrontiumGP
+from process_d18O_d13C import generate_d18O,generate_d13C
 import preprocessing
 
 def quantilify(dataframe,gp,values,group=-1):
     for value in values:
         dataframe[str(value)] = numpy.squeeze(gp.quantile(value/100,group=group))
     return dataframe
+
+
+strontium_gp = makeStrontiumGP()
+d18O_gp = generate_d18O()
+d13C_gp = generate_d13C()
 
 markov_chain = Sampling.MarkovChain().fromJSON("./Data/Output/markov_chain.json").burn(10)
 
@@ -38,7 +45,26 @@ saturation_state_gp.fromMCMCSamples(markov_chain.accumulate("omega"))
 calcium_gp.fromMCMCSamples(markov_chain.accumulate("calcium"))
 co3_gp.fromMCMCSamples(markov_chain.accumulate("co3"))
 
+
 quantiles = [5,16,50,84,95]
+
+empty_dataframe = pandas.DataFrame()
+empty_dataframe["age"] = preprocessing.equally_spaced_ages
+empty_dataframe["mean"] = strontium_gp.means[-1][0]
+strontium_dataframe = quantilify(empty_dataframe,strontium_gp,quantiles)
+strontium_dataframe = strontium_dataframe.sort_values(by="age",ascending=True)
+
+empty_dataframe = pandas.DataFrame()
+empty_dataframe["age"] = preprocessing.equally_spaced_ages
+empty_dataframe["mean"] = d18O_gp.means[-1][0]
+d18O_dataframe = quantilify(empty_dataframe,d18O_gp,quantiles)
+d18O_dataframe = d18O_dataframe.sort_values(by="age",ascending=True)
+
+empty_dataframe = pandas.DataFrame()
+empty_dataframe["age"] = preprocessing.equally_spaced_ages
+empty_dataframe["mean"] = d13C_gp.means[-1][0]
+d13C_dataframe = quantilify(empty_dataframe,d13C_gp,quantiles)
+d13C_dataframe = d13C_dataframe.sort_values(by="age",ascending=True)
 
 empty_dataframe = pandas.DataFrame()
 empty_dataframe["age"] = preprocessing.equally_spaced_ages
@@ -111,7 +137,28 @@ with pandas.ExcelWriter("./Data/Output/metrics_100kyr.xlsx") as writer:
     saturation_state_dataframe.to_excel(writer,sheet_name="saturation_state")
     calcium_dataframe.to_excel(writer,sheet_name="calcium")
     co3_dataframe.to_excel(writer,sheet_name="co3")
+    strontium_dataframe.to_excel(writer,sheet_name="strontium")
+    d18O_dataframe.to_excel(writer,sheet_name="d18O")
+    d13C_dataframe.to_excel(writer,sheet_name="d13C")
 
+
+empty_dataframe = pandas.DataFrame()
+empty_dataframe["age"] = preprocessing.interpolation_ages[0]
+empty_dataframe["mean"] = strontium_gp.means[0][0]
+strontium_dataframe = quantilify(empty_dataframe,strontium_gp,quantiles,group=0)
+strontium_dataframe = strontium_dataframe.sort_values(by="age",ascending=True)
+
+empty_dataframe = pandas.DataFrame()
+empty_dataframe["age"] = preprocessing.interpolation_ages[0]
+empty_dataframe["mean"] = d18O_gp.means[0][0]
+d18O_dataframe = quantilify(empty_dataframe,d18O_gp,quantiles,group=0)
+d18O_dataframe = d18O_dataframe.sort_values(by="age",ascending=True)
+
+empty_dataframe = pandas.DataFrame()
+empty_dataframe["age"] = preprocessing.interpolation_ages[0]
+empty_dataframe["mean"] = d13C_gp.means[0][0]
+d13C_dataframe = quantilify(empty_dataframe,d13C_gp,quantiles,group=0)
+d13C_dataframe = d13C_dataframe.sort_values(by="age",ascending=True)
 
 empty_dataframe = pandas.DataFrame()
 empty_dataframe["age"] = preprocessing.interpolation_ages[0]
@@ -184,3 +231,6 @@ with pandas.ExcelWriter("./Data/Output/metrics.xlsx") as writer:
     saturation_state_dataframe.to_excel(writer,sheet_name="saturation_state")
     calcium_dataframe.to_excel(writer,sheet_name="calcium")
     co3_dataframe.to_excel(writer,sheet_name="co3")
+    strontium_dataframe.to_excel(writer,sheet_name="strontium")
+    d18O_dataframe.to_excel(writer,sheet_name="d18O")
+    d13C_dataframe.to_excel(writer,sheet_name="d13C")
